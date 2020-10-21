@@ -18,57 +18,45 @@ async def async_image_scraper():
 
 p = Pipeline()
 
-async def func1_inner(targets, inpt):
-    await asyncio.sleep(1)  # simulated IO delay
-    outp = inpt
-    for target in targets or []:
-        print(f"func1: T1 sending {outp}")
-        await target.asend(outp)
-        await asyncio.sleep(0)
 
+async def func1(queues, param):
+    async def func1_inner(targets, inpt):
+        await asyncio.sleep(1)  # simulated IO delay
+        outp = inpt
+        for target in targets or []:
+            print(f"func1: T1 sending {outp}")
+            await target.put(outp)
+        nonlocal input_q
+        input_q.task_done()
 
-async def func1(targets, param):
     print(f"func1: Got param: {param}")
-    tasks = []
+    input_q = queues[func1.__qualname__]['input']
+    target_qs = queues[func1.__qualname__]['targets']
+
     while True:
-        try:
-            inpt = (yield)
-        except ValueError:
-            break
+        inpt = await input_q.get()
         print(f'func1: Creating task with func1_inner, input {inpt}.')
-        tasks.append(asyncio.create_task(func1_inner(targets, inpt)))
-        await asyncio.sleep(0)
-    for t in tasks:
-        await t
-    for target in targets or []:
-        await target.athrow(ValueError())
+        asyncio.create_task(func1_inner(target_qs, inpt))
 
 
-async def func2_inner(targets, inpt):
-    await asyncio.sleep(1)  # simulated IO delay
-    outp = inpt
-    for target in targets or []:
-        print(f"func2: T2 sending {outp}")
-        await target.asend(outp)
-        await asyncio.sleep(0)
+async def func2(queues, param):
+    async def func2_inner(targets, inpt):
+        await asyncio.sleep(2)  # simulated IO delay
+        outp = inpt
+        for target in targets or []:
+            print(f"func2: T2 sending {outp}")
+            await target.put(outp)
+        nonlocal input_q
+        input_q.task_done()
 
-
-async def func2(targets, param):
     print(f"func2: Got param: {param}")
-    tasks = []
-    while True:
-        try:
-            inpt = (yield)
-        except ValueError:
-            break
-        print(f'func2: Creating task with func2_inner, input {inpt}.')
-        tasks.append(asyncio.create_task(func2_inner(targets, inpt)))
-        await asyncio.sleep(0)
-    for t in tasks:
-        await t
-    for target in targets or []:
-        await target.athrow(ValueError())
+    input_q = queues[func2.__qualname__]['input']
+    target_qs = queues[func2.__qualname__]['targets']
 
+    while True:
+        inpt = await input_q.get()
+        print(f'func2: Creating task with func2_inner, input {inpt}.')
+        asyncio.create_task(func2_inner(target_qs, inpt))
 
 
 t1 = Task('foo', p, func1, args=('param_t1',))
@@ -80,16 +68,12 @@ t1.set_downstream(t2)
 async def scrape_and_process(scraper, pipeline):
     await pipeline.abuild()
     pipeline.render()
-    pipeline_root = pipeline.root_task
-    await asyncio.gather(*[pipeline_root.asend(url) async for url in scraper()])
-    try:
-        await pipeline_root.athrow(ValueError())
-    except Exception as e:
-        if 'StopAsyncIteration' in str(e):
-            pass
+    async_generator = scraper()
+    await pipeline.run(async_generator)
 
 # %%
 start_time = time.time()
-asyncio.run(scrape_and_process(async_image_scraper, p))
+loop = asyncio.get_event_loop()
+loop.run_until_complete(scrape_and_process(async_image_scraper, p))
 print(f"Asynchronous duration: {time.time() - start_time}s.")
 
