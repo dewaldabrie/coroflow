@@ -19,8 +19,9 @@ async def async_image_scraper():
 p = Pipeline()
 
 
-async def func1(queues, param):
+async def func1(queues, param, task_id=None):
     async def func1_inner(targets, inpt):
+        # do your async pipelined work
         await asyncio.sleep(1)  # simulated IO delay
         outp = inpt
         for target in targets or []:
@@ -30,8 +31,10 @@ async def func1(queues, param):
         input_q.task_done()
 
     print(f"func1: Got param: {param}")
-    input_q = queues[func1.__qualname__]['input']
-    target_qs = queues[func1.__qualname__]['targets']
+    input_q = queues[task_id]['input']
+    target_qs = queues[task_id]['targets']
+
+    # do any setup here
 
     while True:
         inpt = await input_q.get()
@@ -39,7 +42,7 @@ async def func1(queues, param):
         asyncio.create_task(func1_inner(target_qs, inpt))
 
 
-async def func2(queues, param):
+async def func2(queues, param, task_id=None):
     async def func2_inner(targets, inpt):
         await asyncio.sleep(2)  # simulated IO delay
         outp = inpt
@@ -50,8 +53,8 @@ async def func2(queues, param):
         input_q.task_done()
 
     print(f"func2: Got param: {param}")
-    input_q = queues[func2.__qualname__]['input']
-    target_qs = queues[func2.__qualname__]['targets']
+    input_q = queues[task_id]['input']
+    target_qs = queues[task_id]['targets']
 
     while True:
         inpt = await input_q.get()
