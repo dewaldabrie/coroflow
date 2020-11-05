@@ -5,7 +5,7 @@ from anytree import Node, RenderTree, PreOrderIter
 from collections import defaultdict
 from copy import deepcopy
 from pprint import pprint
-from typing import Callable, Iterable, Union, Optional
+from typing import Callable, Optional
 
 
 class Pipeline:
@@ -79,7 +79,7 @@ class Pipeline:
 
     async def abuild(self, leaf_nodes=None, stop_before: str = None):
         """
-        TODO: test with pipeline of unity length
+        Recursively build tree in reverse.
         """
 
         if not leaf_nodes:
@@ -115,9 +115,9 @@ class Pipeline:
 
         print("Build complete.")
 
-    async def run(self):
+    def run(self, render=True, show_queues=False):
         """
-        Await the initial generator and then join all the input queues.
+        Build, then await the initial generator and then join all the input queues.
         :return:
         """
         async def _run():
@@ -143,13 +143,16 @@ class Pipeline:
         asyncio.run(_run())
 
     def render(self):
+        """
+        ASCII representation of the tree/DAG
+        """
         for pre, fill, node in RenderTree(self.root_node):
             print("%s%s" % (pre, node.name))
 
 
 class OutputPattern:
-    fanout = 'fanout'
-    load_balance = 'lb'
+    fanout = 'fanout'  # send to every child queueu
+    load_balance = 'lb'  # send to child queue with shortest queue size
 
 
 class Task(Node):
@@ -214,7 +217,7 @@ class Task(Node):
                             else:
                                 pass  # don't send anything
 
-                    # Treat inner func as a generator
+                    # Treat inner func as an async generator
                     if inspect.isasyncgenfunction(self.inner):
                         async for output in self.inner(context, inpt, **kwargs):
                             await handle_output(output)

@@ -12,8 +12,6 @@ def sync_image_scraper():
     yield 'img_url_3'
 
 
-p = Pipeline()
-
 def func1(targets, param=None):
     print(f"func1: Got param: {param}")
     while True:
@@ -31,6 +29,8 @@ def func2(targets, param=None):
         time.sleep(1)  # simulated IO delay
         print(f"func2: Got sent value {inpt}")
 
+
+p = Pipeline()
 
 t1 = Task('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
 t2 = Task('func2', p, coro_func=func2, kwargs={'param': 'param_t2'})

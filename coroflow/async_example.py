@@ -1,7 +1,3 @@
-"""
-TODO this needs buffering to speed up vs synchronous counterpart.
-See https://pypi.org/project/asyncio-buffered-pipeline/
-"""
 from coroflow import Task, Pipeline
 import asyncio
 import time
