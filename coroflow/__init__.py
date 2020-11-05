@@ -218,10 +218,19 @@ class Task(Node):
                     if inspect.isasyncgenfunction(self.inner):
                         async for output in self.inner(context, inpt, **kwargs):
                             await handle_output(output)
-                    # Treat inner func as a callable
-                    else:
+                    # Treat inner func as a normal generator
+                    if inspect.isgeneratorfunction(self.inner):
+                        for output in self.inner(context, inpt, **kwargs):
+                            await handle_output(output)
+                    # Treat inner func as an async callable
+                    elif inspect.iscoroutinefunction(self.inner):
                         output = await self.inner(context, inpt, **kwargs)
                         await handle_output(output)
+                    # Treat inner func as a normal callable
+                    elif inspect.isfunction(self.inner):
+                        output = self.inner(context, inpt, **kwargs)
+                        await handle_output(output)
+
 
                 finally:
                     # nonlocal input_q
