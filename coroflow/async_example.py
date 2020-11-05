@@ -12,9 +12,6 @@ async def generator(queues, task_id=None):
             await target_q.put(url)
 
 
-p = Pipeline()
-
-
 async def func1(queues, param=None, task_id=None):
     async def inner(targets, inpt):
         # do your async pipelined work
@@ -58,23 +55,23 @@ async def func2(queues, param=None, task_id=None):
         asyncio.create_task(inner(target_qs, inpt))
 
 
+p = Pipeline()
+
 t0 = Task('gen', p, coro_func=generator)
 t1 = Task('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
 t2 = Task('func2', p, coro_func=func2, kwargs={'param': 'param_t2'})
+t3 = Task('func3', p, coro_func=func2, kwargs={'param': 'param_t3'})
+t4 = Task('func4', p, coro_func=func2, kwargs={'param': 'param_t4'})
 t0.set_downstream(t1)
 t1.set_downstream(t2)
+t1.set_downstream(t3)
+t2.set_downstream(t4)
+t3.set_downstream(t4)
 
 
-# %%
-async def scrape_and_process(scraper, pipeline):
-    await pipeline.abuild()
-    pipeline.render()
-    pprint(pipeline.queues)
-    await pipeline.run()
 
 # %%
 start_time = time.time()
-loop = asyncio.get_event_loop()
-loop.run_until_complete(scrape_and_process(generator, p))
+p.run()
 print(f"Asynchronous duration: {time.time() - start_time}s.")
 
