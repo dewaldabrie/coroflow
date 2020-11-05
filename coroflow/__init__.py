@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 import types
+import random
 from anytree import Node, RenderTree, PreOrderIter
 from collections import defaultdict
 from copy import deepcopy
@@ -212,7 +213,8 @@ class Task(Node):
                             # load-balancer pattern
                             elif self.output_pattern == OutputPattern.load_balance:
                                 q_sizes = [t.qsize() for t in target_qs]
-                                target_q = target_qs[q_sizes.index(min(q_sizes))]
+                                min_q_idxs = [q for i, q in enumerate(q_sizes) if q == min(q_sizes)]
+                                target_q = target_qs[random.choice(min_q_idxs)]
                                 await target_q.put(output)
                             else:
                                 pass  # don't send anything
