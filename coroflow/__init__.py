@@ -120,17 +120,27 @@ class Pipeline:
         Await the initial generator and then join all the input queues.
         :return:
         """
-        # await initial generator
-        await self.root_task
-        # join all input queues
-        for node in PreOrderIter(self.root_node):
-            task_id = node.task_id
-            input_queue = self.queues[task_id]['input']
-            if input_queue is not None:  # root node has not input queue
-                pprint(f"Joining queue for {task_id}")
-                await input_queue.join()
-                pprint(f"Done joining queue for {task_id}")
-        await asyncio.sleep(1)
+        async def _run():
+            await self.abuild()
+            if render:
+                self.render()
+            if show_queues:
+                pprint(self.queues)
+            # await initial generator
+            await self.root_task
+            await asyncio.gather(*self.tasks)
+            # done, pending = await asyncio.wait([self.root_task])
+            print("Root coro is finished.")
+            # join all input queues
+            for node in PreOrderIter(self.root_node):
+                task_id = node.task_id
+                input_queue = self.queues[task_id]['input']
+                if input_queue is not None:  # root node has not input queue
+                    pprint(f"Joining queue for {task_id}")
+                    await input_queue.join()
+                    pprint(f"Done joining queue for {task_id}")
+
+        asyncio.run(_run())
 
     def render(self):
         for pre, fill, node in RenderTree(self.root_node):
@@ -160,12 +170,12 @@ class Task(Node):
         self.pipeline.nodes[task_id] = self
         self._coro_func: Optional[Callable] = coro_func
         if setup:
-            self.setup: Optional[Callable] = setup
+            types.MethodType(setup, self)  # bind func to this class instance
         if inner:
-            self.inner: Union[Callable, Iterable] = inner
+            types.MethodType(inner, self)  # bind func to this class instance
         if teardown:
-            self.teardown: Optional[Callable] = teardown
-        self.output_pattern = output_pattern,
+            types.MethodType(teardown, self)  # bind func to this class instance
+        self.output_pattern = output_pattern
         self.coro = None
         self.kwargs = kwargs or {}
         self.targets = None
@@ -177,12 +187,6 @@ class Task(Node):
         if self._coro_func:
             return self._coro_func
         else:
-            if hasattr(self, 'inner'):
-                types.MethodType(self.inner, self)  # bind func to this class instance
-            if hasattr(self, 'setup'):
-                types.MethodType(self.setup, self)  # bind func to this class instance
-            if hasattr(self, 'teardown'):
-                types.MethodType(self.teardown, self)  # bind func to this class instance
             return self.coro_func_builder()
 
     @coro_func.setter
@@ -190,8 +194,7 @@ class Task(Node):
         self._coro_func = value
 
     def coro_func_builder(self):
-        if not self.inner:
-            breakpoint()
+        if not hasattr(self, 'inner'):
             raise ValueError("Please supply an inner function.")
 
         async def coro_func(queues, task_id=self.task_id, **kwargs):
@@ -235,11 +238,13 @@ class Task(Node):
             try:
                 # First task must be a generator
                 if self.is_root:
-                    asyncio.create_task(outer(target_qs, input_q, context, None))
+                    task = asyncio.create_task(outer(target_qs, input_q, context, None))
+                    self.pipeline.tasks.append(task)
                 else:
                     while True:
                         inpt = await input_q.get()
-                        asyncio.create_task(outer(target_qs, input_q, context, inpt))
+                        task = asyncio.create_task(outer(target_qs, input_q, context, inpt))
+                        self.pipeline.tasks.append(task)
             finally:
                 if hasattr(self, 'teardown'):
                     await self.teardown(context)
@@ -251,7 +256,6 @@ class Task(Node):
         if not self.coro:
             self.coro = self.coro_func(queues, task_id=self.task_id, **self.kwargs)
             task = asyncio.create_task(self.coro)
-            self.pipeline.tasks.append(task)
             if self.is_root:
                 self.pipeline.root_task = task
 
