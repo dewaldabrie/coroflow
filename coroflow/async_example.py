@@ -5,22 +5,22 @@ See https://pypi.org/project/asyncio-buffered-pipeline/
 from coroflow import Task, Pipeline
 import asyncio
 import time
+from pprint import pprint
 
 
-async def async_image_scraper():
-    yield 'img_url_1'
-    await asyncio.sleep(0)
-    yield 'img_url_2'
-    await asyncio.sleep(0)
-    yield 'img_url_3'
-    await asyncio.sleep(0)
+async def generator(queues, task_id=None):
+    target_qs = queues[task_id]['targets']
+    for url in ['img_url_1', 'img_url_2', 'img_url_3']:
+        for target_q in target_qs:
+            await asyncio.sleep(1)
+            await target_q.put(url)
 
 
 p = Pipeline()
 
 
-async def func1(queues, param, task_id=None):
-    async def func1_inner(targets, inpt):
+async def func1(queues, param=None, task_id=None):
+    async def inner(targets, inpt):
         # do your async pipelined work
         await asyncio.sleep(1)  # simulated IO delay
         outp = inpt
@@ -39,15 +39,15 @@ async def func1(queues, param, task_id=None):
     while True:
         inpt = await input_q.get()
         print(f'func1: Creating task with func1_inner, input {inpt}.')
-        asyncio.create_task(func1_inner(target_qs, inpt))
+        asyncio.create_task(inner(target_qs, inpt))
 
 
-async def func2(queues, param, task_id=None):
-    async def func2_inner(targets, inpt):
-        await asyncio.sleep(2)  # simulated IO delay
+async def func2(queues, param=None, task_id=None):
+    async def inner(targets, inpt):
+        print(f"func2: T2 processing {inpt}")
+        await asyncio.sleep(1)  # simulated IO delay
         outp = inpt
         for target in targets or []:
-            print(f"func2: T2 sending {outp}")
             await target.put(outp)
         nonlocal input_q
         input_q.task_done()
@@ -59,11 +59,13 @@ async def func2(queues, param, task_id=None):
     while True:
         inpt = await input_q.get()
         print(f'func2: Creating task with func2_inner, input {inpt}.')
-        asyncio.create_task(func2_inner(target_qs, inpt))
+        asyncio.create_task(inner(target_qs, inpt))
 
 
-t1 = Task('foo', p, func1, args=('param_t1',))
-t2 = Task('bar', p, func2, args=('param_t2',))
+t0 = Task('gen', p, coro_func=generator)
+t1 = Task('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
+t2 = Task('func2', p, coro_func=func2, kwargs={'param': 'param_t2'})
+t0.set_downstream(t1)
 t1.set_downstream(t2)
 
 
@@ -71,12 +73,12 @@ t1.set_downstream(t2)
 async def scrape_and_process(scraper, pipeline):
     await pipeline.abuild()
     pipeline.render()
-    async_generator = scraper()
-    await pipeline.run(async_generator)
+    pprint(pipeline.queues)
+    await pipeline.run()
 
 # %%
 start_time = time.time()
 loop = asyncio.get_event_loop()
-loop.run_until_complete(scrape_and_process(async_image_scraper, p))
+loop.run_until_complete(scrape_and_process(generator, p))
 print(f"Asynchronous duration: {time.time() - start_time}s.")
 

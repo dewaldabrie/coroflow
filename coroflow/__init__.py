@@ -1,16 +1,21 @@
 import asyncio
+import inspect
+import types
 from anytree import Node, RenderTree, PreOrderIter
 from collections import defaultdict
 from copy import deepcopy
 from pprint import pprint
+from typing import Callable, Iterable, Union, Optional
 
 
 class Pipeline:
     def __init__ (self):
         self.nodes = {}
+        self.tasks = []
         self.queues = defaultdict(dict)
-        self.root_task = None
+        self.root_coro = None
         self.root_node = None
+        self.root_task = None
         self.proxy_nodes_by_task_id = {}
 
     def build(self, leaf_nodes=None, stop_before: str = None):
@@ -20,14 +25,14 @@ class Pipeline:
         if not leaf_nodes:
             leaf_nodes = list(self.nodes.values())[0].root.leaves
         for leaf in leaf_nodes:
-            leaf.coro = leaf.coro_func(None, *leaf.args, **leaf.kwargs)
+            leaf.coro = leaf.coro_func(None, **leaf.kwargs)
             leaf.coro.send(None)
             node = leaf
             while True:
                 if node.is_root:
-                    self.root_task = node.coro
+                    self.root_coro = node.coro
                     self.root_node = node
-                    self.root_task.send(None)
+                    self.root_coro.send(None)
                     break
                 parent = node.parent
                 parent_targets = []
@@ -35,7 +40,7 @@ class Pipeline:
                 for child in children:
                     if child.coro is None:
                         if child.is_leaf:
-                            child.coro = child.coro_func(None, *child.args, **child.kwargs)
+                            child.coro = child.coro_func(None, **child.kwargs)
                             child.coro.send(None)
                         else:
                             descendant_leaves = [d for d in child.descendants if d.is_leaf]
@@ -46,7 +51,7 @@ class Pipeline:
                 if parent.name == stop_before:
                     return
                 if not parent.coro:
-                    parent.coro = parent.coro_func(parent_targets, *parent.args, **parent.kwargs)
+                    parent.coro = parent.coro_func(parent_targets, **parent.kwargs)
                     parent.coro.send(None)
 
                 node = parent
@@ -59,14 +64,14 @@ class Pipeline:
         # don't need queues for the proxy (coroutines are shared between
         # the proxies).
         if node.is_proxy_for_node is None:
-            q = asyncio.Queue()
+            q = asyncio.Queue() if not node.is_root else None
             self.queues[node.task_id]['input'] = q
             self.queues[node.task_id]['targets'] = targets
             node.prime(self.queues)
         else:
             # make sure the coro is shared between proxy and original
             if node.task_id not in self.queues:
-                q = asyncio.Queue()
+                q = asyncio.Queue() if not node.is_root else None
                 self.queues[node.task_id]['input'] = q
                 self.queues[node.task_id]['targets'] = targets
                 node.is_proxy_for_node.prime(self.queues)
@@ -85,7 +90,7 @@ class Pipeline:
             while True:
                 if node.is_root:
                     node.prime(self.queues)
-                    self.root_task = node.coro
+                    self.root_coro = node.coro
                     self.root_node = node
                     break
                 parent = node.parent
@@ -102,7 +107,6 @@ class Pipeline:
                     parent_targets.append(child.task_id)
 
                 if parent.name == stop_before:
-                    print("Build complete.")
                     return
                 if not parent.coro:
                     self.coro_setup(parent, targets=[self.queues[task_id]['input'] for task_id in parent_targets])
@@ -111,44 +115,145 @@ class Pipeline:
 
         print("Build complete.")
 
-    async def run(self, async_generator):
-        root_input_q = self.queues[self.root_node.task_id]['input']
-        async for url in async_generator:
-            await root_input_q.put(url)
-        await self.join_all_input_queues()
-
-    async def join_all_input_queues(self):
+    async def run(self):
+        """
+        Await the initial generator and then join all the input queues.
+        :return:
+        """
+        # await initial generator
+        await self.root_task
+        # join all input queues
         for node in PreOrderIter(self.root_node):
             task_id = node.task_id
             input_queue = self.queues[task_id]['input']
-            pprint(f"Joining queue for {task_id}")
-            await input_queue.join()
-            pprint(f"Done joining queue for {task_id}")
+            if input_queue is not None:  # root node has not input queue
+                pprint(f"Joining queue for {task_id}")
+                await input_queue.join()
+                pprint(f"Done joining queue for {task_id}")
+        await asyncio.sleep(1)
 
     def render(self):
         for pre, fill, node in RenderTree(self.root_node):
             print("%s%s" % (pre, node.name))
 
 
+class OutputPattern:
+    fanout = 'fanout'
+    load_balance = 'lb'
+
+
 class Task(Node):
-    def __init__(self, task_id, pipeline, coro_func, args=None, kwargs=None):
+    def __init__(
+            self,
+            task_id,
+            pipeline,
+            coro_func=None,
+            setup=None,
+            inner=None,
+            teardown=None,
+            output_pattern=OutputPattern.fanout,
+            kwargs=None
+    ):
         self.pipeline = pipeline
         if task_id in self.pipeline.nodes:
             raise ValueError(f'Task task_id must be unique, but `{task_id}` already exists.')
         self.pipeline.nodes[task_id] = self
-        self.coro_func = coro_func
+        self._coro_func: Optional[Callable] = coro_func
+        if setup:
+            self.setup: Optional[Callable] = setup
+        if inner:
+            self.inner: Union[Callable, Iterable] = inner
+        if teardown:
+            self.teardown: Optional[Callable] = teardown
+        self.output_pattern = output_pattern,
         self.coro = None
-        self.args = args or []
         self.kwargs = kwargs or {}
         self.targets = None
         self.is_proxy_for_node = None
         super().__init__(task_id)
 
+    @property
+    def coro_func(self):
+        if self._coro_func:
+            return self._coro_func
+        else:
+            if hasattr(self, 'inner'):
+                types.MethodType(self.inner, self)  # bind func to this class instance
+            if hasattr(self, 'setup'):
+                types.MethodType(self.setup, self)  # bind func to this class instance
+            if hasattr(self, 'teardown'):
+                types.MethodType(self.teardown, self)  # bind func to this class instance
+            return self.coro_func_builder()
+
+    @coro_func.setter
+    def coro_func(self, value):
+        self._coro_func = value
+
+    def coro_func_builder(self):
+        if not self.inner:
+            breakpoint()
+            raise ValueError("Please supply an inner function.")
+
+        async def coro_func(queues, task_id=self.task_id, **kwargs):
+            async def outer(target_qs, input_q, context, inpt):
+                try:
+                    async def handle_output(output):
+                        if output:
+                            # fanout pattern
+                            if self.output_pattern == OutputPattern.fanout:
+                                for target_q in target_qs:
+                                    await target_q.put(output)
+                            # load-balancer pattern
+                            elif self.output_pattern == OutputPattern.load_balance:
+                                q_sizes = [t.qsize() for t in target_qs]
+                                target_q = target_qs[q_sizes.index(min(q_sizes))]
+                                await target_q.put(output)
+                            else:
+                                pass  # don't send anything
+
+                    # Treat inner func as a generator
+                    if inspect.isasyncgenfunction(self.inner):
+                        async for output in self.inner(context, inpt, **kwargs):
+                            await handle_output(output)
+                    # Treat inner func as a callable
+                    else:
+                        output = await self.inner(context, inpt, **kwargs)
+                        await handle_output(output)
+
+                finally:
+                    # nonlocal input_q
+                    if input_q is not None:
+                        input_q.task_done()
+
+            input_q = queues[task_id].get('input')
+            target_qs = queues[task_id]['targets']
+
+            context = {}
+            if hasattr(self, 'setup'):
+                context = await self.setup()
+
+            try:
+                # First task must be a generator
+                if self.is_root:
+                    asyncio.create_task(outer(target_qs, input_q, context, None))
+                else:
+                    while True:
+                        inpt = await input_q.get()
+                        asyncio.create_task(outer(target_qs, input_q, context, inpt))
+            finally:
+                if hasattr(self, 'teardown'):
+                    await self.teardown(context)
+
+        return coro_func
+
     def prime(self, queues):
         """Prime the associated coroutine"""
         if not self.coro:
-            self.coro = self.coro_func(queues, *self.args, **self.kwargs, task_id=self.task_id)
-            asyncio.create_task(self.coro)
+            self.coro = self.coro_func(queues, task_id=self.task_id, **self.kwargs)
+            task = asyncio.create_task(self.coro)
+            self.pipeline.tasks.append(task)
+            if self.is_root:
+                self.pipeline.root_task = task
 
 
     @property
