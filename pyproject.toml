@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "coroflow"
+version = "1.0.0"
+description = "Asynchronous pipeline builder"
+authors = ["Dewald Abrie <dewaldabrie@gmail.com>"]
+readme = "README.md"
+repository = "https://github.com/dewaldabrie/coroflow/"
+keywords = [
+    "asyncio",
+    "pipelines",
+    "fast",
+    "threads",
+    "airflow",
+    "coroutines"
+]
+
+[tool.poetry.dependencies]
+python = "^3.6"
+anytree = "^2.8.0"
+
+[tool.poetry.dev-dependencies]
+pytest = "^6.1.2"
+
+[tool.poetry.urls]
+repository = "https://github.com/dewaldabrie/coroflow/issues"
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"
