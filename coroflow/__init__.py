@@ -1,4 +1,6 @@
 import asyncio
+import concurrent.futures
+import functools
 import inspect
 import types
 import random
@@ -225,15 +227,35 @@ class Task(Node):
                             await handle_output(output)
                     # Treat inner func as a normal generator
                     if inspect.isgeneratorfunction(self.inner):
-                        for output in self.inner(context, inpt, **kwargs):
-                            await handle_output(output)
+                        # run blocking generator in thread to keep event loop running smoothly
+                        loop = asyncio.get_running_loop()
+                        blocking_generator = self.inner(context, inpt, **kwargs)
+
+                        def catch_stop_iter(gen):
+                            try:
+                                res = next(gen)
+                                return res, False
+                            except StopIteration:
+                                return None, True
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            while True:
+                                output, gen_finished = await loop.run_in_executor(
+                                    pool, catch_stop_iter, blocking_generator
+                                )
+                                if gen_finished:
+                                    break
+                                await handle_output(output)
                     # Treat inner func as an async callable
                     elif inspect.iscoroutinefunction(self.inner):
                         output = await self.inner(context, inpt, **kwargs)
                         await handle_output(output)
                     # Treat inner func as a normal callable
                     elif inspect.isfunction(self.inner):
-                        output = self.inner(context, inpt, **kwargs)
+                        # run blocking function in thread to keep event loop running smoothly
+                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                            loop = asyncio.get_running_loop()
+                            blocking_function = functools.partial(self.inner, context, inpt, **kwargs)
+                            output = await loop.run_in_executor(pool, blocking_function)
                         await handle_output(output)
 
 
