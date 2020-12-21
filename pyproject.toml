@@ -5,6 +5,7 @@ description = "Asynchronous pipeline builder"
 authors = ["Dewald Abrie <dewaldabrie@gmail.com>"]
 readme = "README.md"
 repository = "https://github.com/dewaldabrie/coroflow/"
+documentation = "https://coroflow.readthedocs.io/en/latest/"
 keywords = [
     "asyncio",
     "pipelines",
@@ -23,6 +24,7 @@ pytest = "^6.1.2"
 
 [tool.poetry.urls]
 repository = "https://github.com/dewaldabrie/coroflow/issues"
+documentation = "https://coroflow.readthedocs.io/en/latest/"
 
 [build-system]
 requires = ["poetry-core>=1.0.0"]
