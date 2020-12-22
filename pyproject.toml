@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "coroflow"
-version = "1.0.0"
+version = "1.0.1"
 description = "Asynchronous pipeline builder"
 authors = ["Dewald Abrie <dewaldabrie@gmail.com>"]
 readme = "README.md"
