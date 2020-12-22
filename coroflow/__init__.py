@@ -12,7 +12,12 @@ from typing import Callable, Optional
 
 
 class Pipeline:
-    def __init__ (self):
+    """
+    A class to link tasks together with various patterns like fan-in, fan-out, load balancer, etc.
+    Queues are uses to pass data between tasks.
+    The pipeline is build by recursively reversing from the leaf nodes of the tree back to the root node.
+    """
+    def __init__(self):
         self.nodes = {}
         self.tasks = []
         self.queues = defaultdict(dict)
@@ -23,7 +28,10 @@ class Pipeline:
 
     def build(self, leaf_nodes=None, stop_before: str = None):
         """
-        TODO: test with pipeline of unity length
+        Connect the tasks in the pipeline.
+        :param leaf_nodes: Used to recurse this function, nor required from top level call.
+        :param stop_before: Used to recurse this function, nor required from top level call.
+        :return: None
         """
         if not leaf_nodes:
             leaf_nodes = list(self.nodes.values())[0].root.leaves
@@ -121,6 +129,8 @@ class Pipeline:
     def run(self, render=True, show_queues=False):
         """
         Build, then await the initial generator and then join all the input queues.
+        :param render: Boolean for whether to print and ASCII tree representation of the dag
+        :param show_queues: Boolean for whether to show the queues dictionary (for debugging)
         :return:
         """
         async def _run():
@@ -154,11 +164,22 @@ class Pipeline:
 
 
 class OutputPattern:
+    """
+    Options for connecting pipeline tasks together:
+    :param fanout: Pass the output of a task to all nodes connected to it in the DAG.
+    :param lb: Pass the output of this task to the node with the shortest input queue of those connected to it.
+    """
     fanout = 'fanout'  # send to every child queueu
     load_balance = 'lb'  # send to child queue with shortest queue size
 
 
 class Task(Node):
+    """
+    An extension of an Anytree Node. The tree is used as an easy way to contruct a DAG.
+    This class builds a coroutine that can read data from it's input queue and submit data to it's target queue(s).
+    After reading from the input queue it creates a new task to handle the data with the task logic that
+    is passed in at construction/class definition.
+    """
     def __init__(
             self,
             task_id,
@@ -170,6 +191,17 @@ class Task(Node):
             output_pattern=OutputPattern.fanout,
             kwargs=None
     ):
+        """
+        Pass in the logic for your task as well as which output pattern to use for data propagation.
+        :param task_id: Unique name (string) for the task
+        :param pipeline: Pipeline object that the task belongs to
+        :param coro_func: Custom function to use as an async task builder. Only for advanced users.
+        :param setup: Setup function that passes context to the task logic in inner function
+        :param inner: Task logic to handle input and generate output to next stage
+        :param teardown: Teardown function to clean up context
+        :param output_pattern: How to propogate data to the next stage
+        :param kwargs:
+        """
         self.pipeline = pipeline
         if task_id in self.pipeline.nodes:
             raise ValueError(f'Task task_id must be unique, but `{task_id}` already exists.')
@@ -334,15 +366,4 @@ class Task(Node):
                 self.children += (other,)
             else:
                 self.children = (other,)
-
-
-def coroutine(func):
-    """Helps prime co-routines"""
-
-    def start(*args, **kwargs):
-        cr = func(*args, **kwargs)
-        cr.send(None)
-        return cr
-
-    return start
 
