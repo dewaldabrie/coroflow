@@ -57,3 +57,33 @@ class TestPipelineChaining(TestCase):
         p.run()
 
         self.assertEqual(output, ['img_url_1', 'img_url_2', 'img_url_3'])
+
+    def test_chaining_with_task_classes(self):
+
+        class GenTask(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                for i in range(3):
+                    yield i
+
+        class MyTask(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                await asyncio.sleep(0.0001)
+                return inpt
+
+        outputs = []
+        class DataCapture(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                outputs.append(inpt)
+
+        p = Pipeline()
+        t0 = GenTask('gen', p)
+        t1 = MyTask('stage1', p)
+        t2 = DataCapture('capture', p)
+        t0.set_downstream(t1)
+        t1.set_downstream(t2)
+        p.run()
+
+        self.assertEqual(sorted(outputs), [0, 1, 2])

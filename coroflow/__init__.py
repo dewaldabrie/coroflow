@@ -239,7 +239,7 @@ class Task(Node):
             async def outer(target_qs, input_q, context, inpt):
                 try:
                     async def handle_output(output):
-                        if output:
+                        if output is not None:
                             # fanout pattern
                             if self.output_pattern == OutputPattern.fanout:
                                 for target_q in target_qs:
@@ -258,7 +258,7 @@ class Task(Node):
                         async for output in self.inner(context, inpt, **kwargs):
                             await handle_output(output)
                     # Treat inner func as a normal generator
-                    if inspect.isgeneratorfunction(self.inner):
+                    elif inspect.isgeneratorfunction(self.inner):
                         # run blocking generator in thread to keep event loop running smoothly
                         loop = asyncio.get_running_loop()
                         blocking_generator = self.inner(context, inpt, **kwargs)
