@@ -289,6 +289,8 @@ class Task(Node):
                             blocking_function = functools.partial(self.inner, context, inpt, **kwargs)
                             output = await loop.run_in_executor(pool, blocking_function)
                         await handle_output(output)
+                    else:
+                        raise ValueError("Unexpected function type for task.")
 
 
                 finally:
