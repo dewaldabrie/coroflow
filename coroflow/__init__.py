@@ -142,7 +142,6 @@ class Pipeline:
             # await initial generator
             await self.root_task
             await asyncio.gather(*self.tasks)
-            # done, pending = await asyncio.wait([self.root_task])
             print("Root coro is finished.")
             # join all input queues
             for node in PreOrderIter(self.root_node):
@@ -292,9 +291,7 @@ class Task(Node):
                     else:
                         raise ValueError("Unexpected function type for task.")
 
-
                 finally:
-                    # nonlocal input_q
                     if input_q is not None:
                         input_q.task_done()
 
