@@ -64,6 +64,7 @@ class TestPipelineChaining(TestCase):
             @staticmethod
             async def inner(context, inpt):
                 for i in range(3):
+                    await asyncio.sleep(0.0001)
                     yield i
 
         class MyTask(Task):
@@ -73,6 +74,7 @@ class TestPipelineChaining(TestCase):
                 return inpt
 
         outputs = []
+
         class DataCapture(Task):
             @staticmethod
             async def inner(context, inpt):
@@ -81,6 +83,68 @@ class TestPipelineChaining(TestCase):
         p = Pipeline()
         t0 = GenTask('gen', p)
         t1 = MyTask('stage1', p)
+        t2 = DataCapture('capture', p)
+        t0.set_downstream(t1)
+        t1.set_downstream(t2)
+        p.run()
+
+        self.assertEqual(sorted(outputs), [0, 1, 2])
+
+    def test_chaining_with_non_async_generator(self):
+
+        class SyncGenTask(Task):
+            @staticmethod
+            def inner(context, inpt):
+                for i in range(3):
+                    yield i
+
+        class MyTask(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                await asyncio.sleep(0.0001)
+                return inpt
+
+        outputs = []
+
+        class DataCapture(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                outputs.append(inpt)
+
+        p = Pipeline()
+        t0 = SyncGenTask('sync_gen', p)
+        t1 = MyTask('stage1', p)
+        t2 = DataCapture('capture', p)
+        t0.set_downstream(t1)
+        t1.set_downstream(t2)
+        p.run()
+
+        self.assertEqual(sorted(outputs), [0, 1, 2])
+
+    def test_chaining_with_non_async_function(self):
+
+        class GenTask(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                for i in range(3):
+                    await asyncio.sleep(0.0001)
+                    yield i
+
+        class MySyncTask(Task):
+            @staticmethod
+            def inner(context, inpt):
+                return inpt
+
+        outputs = []
+
+        class DataCapture(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                outputs.append(inpt)
+
+        p = Pipeline()
+        t0 = GenTask('gen', p)
+        t1 = MySyncTask('synchronous_stage1', p)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)
