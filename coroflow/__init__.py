@@ -254,8 +254,10 @@ class Task(Node):
                 try:
                     async def handle_output(output):
                         if output is not None:
+                            if target_qs is None:
+                                pass
                             # fanout pattern
-                            if self.output_pattern == OutputPattern.fanout:
+                            elif self.output_pattern == OutputPattern.fanout:
                                 for target_q in target_qs:
                                     await target_q.put(output)
                             # load-balancer pattern
@@ -265,7 +267,7 @@ class Task(Node):
                                 target_q = target_qs[random.choice(min_q_idxs)]
                                 await target_q.put(output)
                             else:
-                                pass  # don't send anything
+                                raise ValueError("Unexpected OutputPattern %s." % self.output_pattern)
 
                     # Treat inner func as an async generator
                     if inspect.isasyncgenfunction(self.inner):
