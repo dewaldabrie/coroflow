@@ -6,11 +6,11 @@ from unittest import (
 from coroflow import Pipeline, Node, ParallelisationMethod
 
 
-def my_sync_task_execute(context, inpt):
+def my_sync_task_execute(inpt):
     return inpt
 
 
-async def agen(context, inpt):
+async def agen(inpt):
     for i in range(3):
         await asyncio.sleep(0.0001)
         yield i
@@ -71,20 +71,20 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_task_classes(self):
 
         class GenNode(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
 
         class MyNode(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 await asyncio.sleep(0.0001)
                 return inpt
 
         outputs = []
 
         class DataCapture(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
@@ -100,19 +100,19 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_non_async_generator(self):
 
         class SyncGenNode(Node):
-            def execute(self, context, inpt):
+            def execute(self, inpt):
                 for i in range(3):
                     yield i
 
         class MyNode(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 await asyncio.sleep(0.0001)
                 return inpt
 
         outputs = []
 
         class DataCapture(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
@@ -128,19 +128,19 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_non_async_function(self):
 
         class GenNode(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
 
         class MySyncNode(Node):
-            def execute(self, context, inpt):
+            def execute(self, inpt):
                 return inpt
 
         outputs = []
 
         class DataCapture(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
@@ -158,7 +158,7 @@ class TestPipelineChaining(TestCase):
         outputs = []
 
         class DataCapture(Node):
-            async def execute(self, context, inpt):
+            async def execute(self, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()

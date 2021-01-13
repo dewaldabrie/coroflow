@@ -4,7 +4,7 @@ import time
 
 
 class GenNode(Node):
-    async def execute(self, context, inpt):
+    async def execute(self, inpt):
         for url in ['img_url_1', 'img_url_2', 'img_url_3']:
             print(f"Yielding {url}")
             await asyncio.sleep(1)
@@ -14,7 +14,7 @@ class GenNode(Node):
 
 
 class DoSomething(Node):
-    async def execute(self, context, inpt, param=None):
+    async def execute(self, inpt, param=None):
         # do your async pipelined work
         await asyncio.sleep(1)  # simulated IO delay
         outp = inpt

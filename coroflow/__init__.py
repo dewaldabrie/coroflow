@@ -250,7 +250,7 @@ class Node(anytree.Node):
                 task_id=self.task_id,
                 **kwargs
         ):
-            async def outer(target_qs, input_q, context, inpt):
+            async def outer(target_qs, input_q, inpt, context=None):
                 try:
                     async def handle_output(output):
                         if output is not None:
@@ -271,11 +271,15 @@ class Node(anytree.Node):
 
                     # Treat execute func as an async generator
                     if inspect.isasyncgenfunction(self.execute):
-                        async for output in self.execute(context, inpt, **kwargs):
+                        if context:
+                            kwargs['context'] = context
+                        async for output in self.execute(inpt, **kwargs):
                             await handle_output(output)
                     # Treat execute func as a normal generator
                     elif inspect.isgeneratorfunction(self.execute):
-                        blocking_generator = self.execute(context, inpt, **kwargs)
+                        if context:
+                            kwargs['context'] = context
+                        blocking_generator = self.execute(inpt, **kwargs)
 
                         def catch_stop_iter(gen):
                             try:
@@ -307,11 +311,15 @@ class Node(anytree.Node):
                                     await handle_output(output)
                     # Treat execute func as an async callable
                     elif inspect.iscoroutinefunction(self.execute):
-                        output = await self.execute(context, inpt, **kwargs)
+                        if context:
+                            kwargs['context'] = context
+                        output = await self.execute(inpt, **kwargs)
                         await handle_output(output)
                     # Treat execute func as a normal callable
                     elif inspect.isfunction(self.execute) or inspect.ismethod(self.execute):
-                        blocking_function = functools.partial(self.execute, context, inpt, **kwargs)
+                        if context:
+                            kwargs['context'] = context
+                        blocking_function = functools.partial(self.execute, inpt, **kwargs)
                         if self.parallelisation_method == ParallelisationMethod.event_loop:
                             output = blocking_function()
                             await handle_output(output)
@@ -344,7 +352,7 @@ class Node(anytree.Node):
                 # First task generates its own data, so we don't need to await the previous stage
                 # since there is no previous stage.
                 if self.is_root:
-                    task = asyncio.create_task(outer(target_qs, input_q, context, None))
+                    task = asyncio.create_task(outer(target_qs, input_q, None, context=context))
                     self.pipeline.tasks[self.task_id].append(task)
                 else:
                     while True:
@@ -355,11 +363,11 @@ class Node(anytree.Node):
                                 if len(list(filter(lambda t: t.done(), self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
                                     await asyncio.sleep(0.001)
                                 else:
-                                    task = asyncio.create_task(outer(target_qs, input_q, context, inpt))
+                                    task = asyncio.create_task(outer(target_qs, input_q, inpt, context=context))
                                     self.pipeline.tasks[self.task_id].append(task)
                                     break
                         else:
-                            task = asyncio.create_task(outer(target_qs, input_q, context, inpt))
+                            task = asyncio.create_task(outer(target_qs, input_q, inpt, context=context))
                             self.pipeline.tasks[self.task_id].append(task)
             finally:
                 if hasattr(self, 'teardown'):
