@@ -71,23 +71,20 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_task_classes(self):
 
         class GenTask(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
 
         class MyTask(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 await asyncio.sleep(0.0001)
                 return inpt
 
         outputs = []
 
         class DataCapture(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
@@ -103,22 +100,19 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_non_async_generator(self):
 
         class SyncGenTask(Task):
-            @staticmethod
-            def inner(context, inpt):
+            def inner(self, context, inpt):
                 for i in range(3):
                     yield i
 
         class MyTask(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 await asyncio.sleep(0.0001)
                 return inpt
 
         outputs = []
 
         class DataCapture(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
@@ -134,22 +128,19 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_non_async_function(self):
 
         class GenTask(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
 
         class MySyncTask(Task):
-            @staticmethod
-            def inner(context, inpt):
+            def inner(self, context, inpt):
                 return inpt
 
         outputs = []
 
         class DataCapture(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
@@ -167,8 +158,7 @@ class TestPipelineChaining(TestCase):
         outputs = []
 
         class DataCapture(Task):
-            @staticmethod
-            async def inner(context, inpt):
+            async def inner(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()

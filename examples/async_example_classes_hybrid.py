@@ -4,8 +4,7 @@ import time
 
 
 class GenTask(Task):
-    @staticmethod
-    def inner(context, inpt):
+    def inner(self, context, inpt):
         for url in ['img_url_1', 'img_url_2', 'img_url_3']:
             print(f"Yielding {url}")
             time.sleep(1)
@@ -15,8 +14,7 @@ class GenTask(Task):
 
 
 class Task1(Task):
-    @staticmethod
-    async def inner(context, inpt, param=None):
+    async def inner(self, context, inpt, param=None):
         # do your async pipelined work
         await asyncio.sleep(1)  # simulated IO delay
         outp = inpt
@@ -25,8 +23,7 @@ class Task1(Task):
 
 
 class Task2(Task):
-    @staticmethod
-    def inner(context, inpt, param=None):
+    def inner(self, context, inpt, param=None):
         print(f"func2: T2 processing {inpt}")
         time.sleep(1)  # simulated IO delay
         outp = inpt
