@@ -18,7 +18,7 @@ class Pipeline:
     """
     def __init__(self):
         self.nodes = {}
-        self.tasks = []
+        self.tasks = defaultdict(list)
         self.queues = defaultdict(dict)
         self.root_coro = None
         self.root_node = None
@@ -140,7 +140,7 @@ class Pipeline:
                 pprint(self.queues)
             # await initial generator
             await self.root_task
-            await asyncio.gather(*self.tasks)
+            await asyncio.gather(*[task for sublist in self.tasks.values() for task in sublist])
             print("Root coro is finished.")
             # join all input queues
             for node in PreOrderIter(self.root_node):
@@ -343,12 +343,22 @@ class Task(Node):
                 # since there is no previous stage.
                 if self.is_root:
                     task = asyncio.create_task(outer(target_qs, input_q, context, None))
-                    self.pipeline.tasks.append(task)
+                    self.pipeline.tasks[self.task_id].append(task)
                 else:
                     while True:
                         inpt = await input_q.get()
-                        task = asyncio.create_task(outer(target_qs, input_q, context, inpt))
-                        self.pipeline.tasks.append(task)
+                        # limit concurrency if required
+                        if self.max_concurrency and len(list(filter(lambda t: t.done(), self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
+                            while True:
+                                if len(list(filter(lambda t: t.done(), self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
+                                    await asyncio.sleep(0.001)
+                                else:
+                                    task = asyncio.create_task(outer(target_qs, input_q, context, inpt))
+                                    self.pipeline.tasks[self.task_id].append(task)
+                                    break
+                        else:
+                            task = asyncio.create_task(outer(target_qs, input_q, context, inpt))
+                            self.pipeline.tasks[self.task_id].append(task)
             finally:
                 if hasattr(self, 'teardown'):
                     await self.teardown(context)
