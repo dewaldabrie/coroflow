@@ -13,7 +13,7 @@ async def generator(queues, task_id=None):
 
 
 async def func1(queues, param=None, task_id=None):
-    async def inner(targets, inpt):
+    async def execute(targets, inpt):
         # do your async pipelined work
         await asyncio.sleep(1)  # simulated IO delay
         outp = inpt
@@ -31,12 +31,12 @@ async def func1(queues, param=None, task_id=None):
 
     while True:
         inpt = await input_q.get()
-        print(f'func1: Creating task with func1_inner, input {inpt}.')
-        asyncio.create_task(inner(target_qs, inpt))
+        print(f'func1: Creating task with func1_execute, input {inpt}.')
+        asyncio.create_task(execute(target_qs, inpt))
 
 
 async def func2(queues, param=None, task_id=None):
-    async def inner(targets, inpt):
+    async def execute(targets, inpt):
         print(f"func2: T2 processing {inpt}")
         await asyncio.sleep(1)  # simulated IO delay
         outp = inpt
@@ -51,8 +51,8 @@ async def func2(queues, param=None, task_id=None):
 
     while True:
         inpt = await input_q.get()
-        print(f'func2: Creating task with func2_inner, input {inpt}.')
-        asyncio.create_task(inner(target_qs, inpt))
+        print(f'func2: Creating task with func2_execute, input {inpt}.')
+        asyncio.create_task(execute(target_qs, inpt))
 
 
 p = Pipeline()

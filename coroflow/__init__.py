@@ -190,7 +190,7 @@ class Task(Node):
             pipeline,
             coro_func=None,
             setup=None,
-            inner=None,
+            execute=None,
             teardown=None,
             output_pattern=OutputPattern.fanout,
             parallelisation_method: ParallelisationMethod = None,
@@ -202,8 +202,8 @@ class Task(Node):
         :param task_id: Unique name (string) for the task
         :param pipeline: Pipeline object that the task belongs to
         :param coro_func: Custom function to use as an async task builder. Only for advanced users.
-        :param setup: Setup function that passes context to the task logic in inner function
-        :param inner: Task logic to handle input and generate output to next stage
+        :param setup: Setup function that passes context to the task logic in execute function
+        :param execute: Task logic to handle input and generate output to next stage
         :param teardown: Teardown function to clean up context
         :param output_pattern: How to propogate data to the next stage
         :param parallelisation_method: whether to run the task in the event loop, thread- or process-pool
@@ -217,8 +217,8 @@ class Task(Node):
         self._coro_func: Optional[Callable] = coro_func
         if setup:
             self.setup = setup
-        if inner:
-            self.inner = inner
+        if execute:
+            self.execute = execute
         if teardown:
             self.teardown = teardown
         self.output_pattern = output_pattern
@@ -242,8 +242,8 @@ class Task(Node):
         self._coro_func = value
 
     def coro_func_builder(self):
-        if not hasattr(self, 'inner'):
-            raise ValueError("Please supply an inner function.")
+        if not hasattr(self, 'execute'):
+            raise ValueError("Please supply an execute function.")
 
         async def coro_func(
                 queues,
@@ -269,13 +269,13 @@ class Task(Node):
                             else:
                                 raise ValueError("Unexpected OutputPattern %s." % self.output_pattern)
 
-                    # Treat inner func as an async generator
-                    if inspect.isasyncgenfunction(self.inner):
-                        async for output in self.inner(context, inpt, **kwargs):
+                    # Treat execute func as an async generator
+                    if inspect.isasyncgenfunction(self.execute):
+                        async for output in self.execute(context, inpt, **kwargs):
                             await handle_output(output)
-                    # Treat inner func as a normal generator
-                    elif inspect.isgeneratorfunction(self.inner):
-                        blocking_generator = self.inner(context, inpt, **kwargs)
+                    # Treat execute func as a normal generator
+                    elif inspect.isgeneratorfunction(self.execute):
+                        blocking_generator = self.execute(context, inpt, **kwargs)
 
                         def catch_stop_iter(gen):
                             try:
@@ -305,13 +305,13 @@ class Task(Node):
                                     if gen_finished:
                                         break
                                     await handle_output(output)
-                    # Treat inner func as an async callable
-                    elif inspect.iscoroutinefunction(self.inner):
-                        output = await self.inner(context, inpt, **kwargs)
+                    # Treat execute func as an async callable
+                    elif inspect.iscoroutinefunction(self.execute):
+                        output = await self.execute(context, inpt, **kwargs)
                         await handle_output(output)
-                    # Treat inner func as a normal callable
-                    elif inspect.isfunction(self.inner) or inspect.ismethod(self.inner):
-                        blocking_function = functools.partial(self.inner, context, inpt, **kwargs)
+                    # Treat execute func as a normal callable
+                    elif inspect.isfunction(self.execute) or inspect.ismethod(self.execute):
+                        blocking_function = functools.partial(self.execute, context, inpt, **kwargs)
                         if self.parallelisation_method == ParallelisationMethod.event_loop:
                             output = blocking_function()
                             await handle_output(output)
