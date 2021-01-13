@@ -3,7 +3,17 @@ from unittest import (
     TestCase,
 )
 
-from coroflow import Pipeline, Task
+from coroflow import Pipeline, Task, ParallelisationMethod
+
+
+def my_sync_task_inner(context, inpt):
+    return inpt
+
+
+async def agen(context, inpt):
+    for i in range(3):
+        await asyncio.sleep(0.0001)
+        yield i
 
 
 class TestPipelineChaining(TestCase):
@@ -145,6 +155,25 @@ class TestPipelineChaining(TestCase):
         p = Pipeline()
         t0 = GenTask('gen', p)
         t1 = MySyncTask('synchronous_stage1', p)
+        t2 = DataCapture('capture', p)
+        t0.set_downstream(t1)
+        t1.set_downstream(t2)
+        p.run()
+
+        self.assertEqual(sorted(outputs), [0, 1, 2])
+
+    def test_parralelisation_strategy_selection(self):
+
+        outputs = []
+
+        class DataCapture(Task):
+            @staticmethod
+            async def inner(context, inpt):
+                outputs.append(inpt)
+
+        p = Pipeline()
+        t0 = Task('gen', p, inner=agen)
+        t1 = Task('synchronous_stage1', p, inner=my_sync_task_inner, parallelisation_method=ParallelisationMethod.process_pool, max_concurrency=10)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)

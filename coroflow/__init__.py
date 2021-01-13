@@ -2,7 +2,6 @@ import asyncio
 import concurrent.futures
 import functools
 import inspect
-import types
 import random
 from anytree import Node, RenderTree, PreOrderIter
 from collections import defaultdict
@@ -172,6 +171,12 @@ class OutputPattern:
     load_balance = 'lb'  # send to child queue with shortest queue size
 
 
+class ParallelisationMethod:
+    event_loop = 'event-loop'
+    thread_pool = 'threads'
+    process_pool = 'processes'
+
+
 class Task(Node):
     """
     An extension of an Anytree Node. The tree is used as an easy way to contruct a DAG.
@@ -188,6 +193,8 @@ class Task(Node):
             inner=None,
             teardown=None,
             output_pattern=OutputPattern.fanout,
+            parallelisation_method: ParallelisationMethod = None,
+            max_concurrency=None,
             kwargs=None
     ):
         """
@@ -199,6 +206,8 @@ class Task(Node):
         :param inner: Task logic to handle input and generate output to next stage
         :param teardown: Teardown function to clean up context
         :param output_pattern: How to propogate data to the next stage
+        :param parallelisation_method: whether to run the task in the event loop, thread- or process-pool
+        :param max_concurrency: How many task instances may be active at any given time
         :param kwargs:
         """
         self.pipeline = pipeline
@@ -207,12 +216,14 @@ class Task(Node):
         self.pipeline.nodes[task_id] = self
         self._coro_func: Optional[Callable] = coro_func
         if setup:
-            types.MethodType(setup, self)  # bind func to this class instance
+            self.setup = setup
         if inner:
-            types.MethodType(inner, self)  # bind func to this class instance
+            self.inner = inner
         if teardown:
-            types.MethodType(teardown, self)  # bind func to this class instance
+            self.teardown = teardown
         self.output_pattern = output_pattern
+        self.parallelisation_method = parallelisation_method
+        self.max_concurrency = max_concurrency
         self.coro = None
         self.kwargs = kwargs or {}
         self.targets = None
@@ -234,7 +245,11 @@ class Task(Node):
         if not hasattr(self, 'inner'):
             raise ValueError("Please supply an inner function.")
 
-        async def coro_func(queues, task_id=self.task_id, **kwargs):
+        async def coro_func(
+                queues,
+                task_id=self.task_id,
+                **kwargs
+        ):
             async def outer(target_qs, input_q, context, inpt):
                 try:
                     async def handle_output(output):
@@ -258,8 +273,6 @@ class Task(Node):
                             await handle_output(output)
                     # Treat inner func as a normal generator
                     elif inspect.isgeneratorfunction(self.inner):
-                        # run blocking generator in thread to keep event loop running smoothly
-                        loop = asyncio.get_running_loop()
                         blocking_generator = self.inner(context, inpt, **kwargs)
 
                         def catch_stop_iter(gen):
@@ -268,26 +281,49 @@ class Task(Node):
                                 return res, False
                             except StopIteration:
                                 return None, True
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
+                        if self.parallelisation_method == ParallelisationMethod.event_loop:
                             while True:
-                                output, gen_finished = await loop.run_in_executor(
-                                    pool, catch_stop_iter, blocking_generator
-                                )
+                                output, gen_finished = catch_stop_iter(blocking_generator)
                                 if gen_finished:
                                     break
                                 await handle_output(output)
+                        else:
+                            if self.parallelisation_method == ParallelisationMethod.process_pool:
+                                pool_class = concurrent.futures.ProcessPoolExecutor
+                            else:
+                                # run blocking generator in thread by default
+                                pool_class = concurrent.futures.ThreadPoolExecutor
+
+                            with pool_class(max_workers=self.max_concurrency) as pool:
+                                loop = asyncio.get_running_loop()
+                                while True:
+                                    output, gen_finished = await loop.run_in_executor(
+                                        pool, catch_stop_iter, blocking_generator
+                                    )
+                                    if gen_finished:
+                                        break
+                                    await handle_output(output)
                     # Treat inner func as an async callable
                     elif inspect.iscoroutinefunction(self.inner):
                         output = await self.inner(context, inpt, **kwargs)
                         await handle_output(output)
                     # Treat inner func as a normal callable
-                    elif inspect.isfunction(self.inner):
-                        # run blocking function in thread to keep event loop running smoothly
-                        with concurrent.futures.ThreadPoolExecutor() as pool:
-                            loop = asyncio.get_running_loop()
-                            blocking_function = functools.partial(self.inner, context, inpt, **kwargs)
-                            output = await loop.run_in_executor(pool, blocking_function)
-                        await handle_output(output)
+                    elif inspect.isfunction(self.inner) or inspect.ismethod(self.inner):
+                        blocking_function = functools.partial(self.inner, context, inpt, **kwargs)
+                        if self.parallelisation_method == ParallelisationMethod.event_loop:
+                            output = blocking_function()
+                            await handle_output(output)
+                        else:
+                            if self.parallelisation_method == ParallelisationMethod.process_pool:
+                                pool_class = concurrent.futures.ProcessPoolExecutor
+                            else:
+                                # run blocking generator in thread by default
+                                pool_class = concurrent.futures.ThreadPoolExecutor
+
+                            with pool_class(max_workers=self.max_concurrency) as pool:
+                                loop = asyncio.get_running_loop()
+                                output = await loop.run_in_executor(pool, blocking_function)
+                            await handle_output(output)
                     else:
                         raise ValueError("Unexpected function type for task.")
 
@@ -303,7 +339,8 @@ class Task(Node):
                 context = await self.setup()
 
             try:
-                # First task must be a generator
+                # First task generates its own data, so we don't need to await the previous stage
+                # since there is no previous stage.
                 if self.is_root:
                     task = asyncio.create_task(outer(target_qs, input_q, context, None))
                     self.pipeline.tasks.append(task)
