@@ -3,7 +3,7 @@ from unittest import (
     TestCase,
 )
 
-from coroflow import Pipeline, Task, ParallelisationMethod
+from coroflow import Pipeline, Node, ParallelisationMethod
 
 
 def my_sync_task_execute(context, inpt):
@@ -58,9 +58,9 @@ class TestPipelineChaining(TestCase):
 
         p = Pipeline()
 
-        t0 = Task('gen', p, coro_func=generator)
-        t1 = Task('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
-        tf = Task('final', p, coro_func=final, kwargs={'param': 'param_t1'})
+        t0 = Node('gen', p, coro_func=generator)
+        t1 = Node('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
+        tf = Node('final', p, coro_func=final, kwargs={'param': 'param_t1'})
         t0.set_downstream(t1)
         t1.set_downstream(tf)
 
@@ -70,26 +70,26 @@ class TestPipelineChaining(TestCase):
 
     def test_chaining_with_task_classes(self):
 
-        class GenTask(Task):
+        class GenNode(Node):
             async def execute(self, context, inpt):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
 
-        class MyTask(Task):
+        class MyNode(Node):
             async def execute(self, context, inpt):
                 await asyncio.sleep(0.0001)
                 return inpt
 
         outputs = []
 
-        class DataCapture(Task):
+        class DataCapture(Node):
             async def execute(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
-        t0 = GenTask('gen', p)
-        t1 = MyTask('stage1', p)
+        t0 = GenNode('gen', p)
+        t1 = MyNode('stage1', p)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)
@@ -99,25 +99,25 @@ class TestPipelineChaining(TestCase):
 
     def test_chaining_with_non_async_generator(self):
 
-        class SyncGenTask(Task):
+        class SyncGenNode(Node):
             def execute(self, context, inpt):
                 for i in range(3):
                     yield i
 
-        class MyTask(Task):
+        class MyNode(Node):
             async def execute(self, context, inpt):
                 await asyncio.sleep(0.0001)
                 return inpt
 
         outputs = []
 
-        class DataCapture(Task):
+        class DataCapture(Node):
             async def execute(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
-        t0 = SyncGenTask('sync_gen', p)
-        t1 = MyTask('stage1', p)
+        t0 = SyncGenNode('sync_gen', p)
+        t1 = MyNode('stage1', p)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)
@@ -127,25 +127,25 @@ class TestPipelineChaining(TestCase):
 
     def test_chaining_with_non_async_function(self):
 
-        class GenTask(Task):
+        class GenNode(Node):
             async def execute(self, context, inpt):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
 
-        class MySyncTask(Task):
+        class MySyncNode(Node):
             def execute(self, context, inpt):
                 return inpt
 
         outputs = []
 
-        class DataCapture(Task):
+        class DataCapture(Node):
             async def execute(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
-        t0 = GenTask('gen', p)
-        t1 = MySyncTask('synchronous_stage1', p)
+        t0 = GenNode('gen', p)
+        t1 = MySyncNode('synchronous_stage1', p)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)
@@ -157,13 +157,13 @@ class TestPipelineChaining(TestCase):
 
         outputs = []
 
-        class DataCapture(Task):
+        class DataCapture(Node):
             async def execute(self, context, inpt):
                 outputs.append(inpt)
 
         p = Pipeline()
-        t0 = Task('gen', p, execute=agen)
-        t1 = Task('synchronous_stage1', p, execute=my_sync_task_execute, parallelisation_method=ParallelisationMethod.process_pool, max_concurrency=10)
+        t0 = Node('gen', p, execute=agen)
+        t1 = Node('synchronous_stage1', p, execute=my_sync_task_execute, parallelisation_method=ParallelisationMethod.process_pool, max_concurrency=10)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)

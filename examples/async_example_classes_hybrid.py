@@ -1,9 +1,9 @@
-from coroflow import Task, Pipeline
+from coroflow import Node, Pipeline
 import asyncio
 import time
 
 
-class GenTask(Task):
+class GenNode(Node):
     def execute(self, context, inpt):
         for url in ['img_url_1', 'img_url_2', 'img_url_3']:
             print(f"Yielding {url}")
@@ -13,7 +13,7 @@ class GenTask(Task):
         return
 
 
-class Task1(Task):
+class Node1(Node):
     async def execute(self, context, inpt, param=None):
         # do your async pipelined work
         await asyncio.sleep(1)  # simulated IO delay
@@ -22,7 +22,7 @@ class Task1(Task):
         return outp
 
 
-class Task2(Task):
+class Node2(Node):
     def execute(self, context, inpt, param=None):
         print(f"func2: T2 processing {inpt}")
         time.sleep(1)  # simulated IO delay
@@ -31,9 +31,9 @@ class Task2(Task):
 
 
 p = Pipeline()
-t0 = GenTask('gen', p)
-t1 = Task1('func1', p, kwargs={'param': 'param_t1'})
-t2 = Task2('func2', p, kwargs={'param': 'param_t2'})
+t0 = GenNode('gen', p)
+t1 = Node1('func1', p, kwargs={'param': 'param_t1'})
+t2 = Node2('func2', p, kwargs={'param': 'param_t2'})
 t0.set_downstream(t1)
 t1.set_downstream(t2)
 

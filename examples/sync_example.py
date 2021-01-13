@@ -1,5 +1,5 @@
 # %%
-from coroflow import Task, Pipeline
+from coroflow import Node, Pipeline
 import time
 
 
@@ -32,8 +32,8 @@ def func2(targets, param=None):
 
 p = Pipeline()
 
-t1 = Task('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
-t2 = Task('func2', p, coro_func=func2, kwargs={'param': 'param_t2'})
+t1 = Node('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
+t2 = Node('func2', p, coro_func=func2, kwargs={'param': 'param_t2'})
 t1.set_downstream(t2)
 
 

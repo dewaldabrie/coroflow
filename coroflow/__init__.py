@@ -1,9 +1,9 @@
+import anytree
 import asyncio
 import concurrent.futures
 import functools
 import inspect
 import random
-from anytree import Node, RenderTree, PreOrderIter
 from collections import defaultdict
 from copy import deepcopy
 from pprint import pprint
@@ -143,7 +143,7 @@ class Pipeline:
             await asyncio.gather(*[task for sublist in self.tasks.values() for task in sublist])
             print("Root coro is finished.")
             # join all input queues
-            for node in PreOrderIter(self.root_node):
+            for node in anytree.PreOrderIter(self.root_node):
                 task_id = node.task_id
                 input_queue = self.queues[task_id]['input']
                 if input_queue is not None:  # root node has not input queue
@@ -157,7 +157,7 @@ class Pipeline:
         """
         ASCII representation of the tree/DAG
         """
-        for pre, fill, node in RenderTree(self.root_node):
+        for pre, fill, node in anytree.RenderTree(self.root_node):
             print("%s%s" % (pre, node.name))
 
 
@@ -177,7 +177,7 @@ class ParallelisationMethod:
     process_pool = 'processes'
 
 
-class Task(Node):
+class Node(anytree.Node):
     """
     An extension of an Anytree Node. The tree is used as an easy way to contruct a DAG.
     This class builds a coroutine that can read data from it's input queue and submit data to it's target queue(s).
@@ -203,7 +203,7 @@ class Task(Node):
         :param pipeline: Pipeline object that the task belongs to
         :param coro_func: Custom function to use as an async task builder. Only for advanced users.
         :param setup: Setup function that passes context to the task logic in execute function
-        :param execute: Task logic to handle input and generate output to next stage
+        :param execute: Node logic to handle input and generate output to next stage
         :param teardown: Teardown function to clean up context
         :param output_pattern: How to propogate data to the next stage
         :param parallelisation_method: whether to run the task in the event loop, thread- or process-pool
@@ -212,7 +212,7 @@ class Task(Node):
         """
         self.pipeline = pipeline
         if task_id in self.pipeline.nodes:
-            raise ValueError(f'Task task_id must be unique, but `{task_id}` already exists.')
+            raise ValueError(f'Node task_id must be unique, but `{task_id}` already exists.')
         self.pipeline.nodes[task_id] = self
         self._coro_func: Optional[Callable] = coro_func
         if setup:
