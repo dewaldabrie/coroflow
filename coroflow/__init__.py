@@ -431,3 +431,9 @@ class Node(anytree.Node):
             else:
                 self.children = (other,)
 
+    def set_upstream(self, others):
+        if isinstance(others, (list, tuple, set)):
+            for other in others:
+                other.set_downstream(self)
+        else:
+            others.set_downstream(self)
