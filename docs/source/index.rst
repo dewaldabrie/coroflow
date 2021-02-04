@@ -13,7 +13,7 @@ in blocking functions and generators::
 
 
     class GenNode(Node):
-        async def execute(inpt):
+        async def execute():
             """
             The execute method of the first/root Node has to be a generator,
             either async or synchronous.

@@ -4,7 +4,7 @@ import time
 
 
 class GenNode(Node):
-    def execute(self, inpt):
+    def execute(self):
         for url in ['img_url_1', 'img_url_2', 'img_url_3']:
             print(f"Yielding {url}")
             time.sleep(1)

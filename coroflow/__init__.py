@@ -273,13 +273,21 @@ class Node(anytree.Node):
                     if inspect.isasyncgenfunction(self.execute):
                         if context:
                             kwargs['context'] = context
-                        async for output in self.execute(inpt, **kwargs):
+                        if self.is_root:
+                            args = []  # don't pass input to root node (no input available)
+                        else:
+                            args = [inpt]
+                        async for output in self.execute(*args, **kwargs):
                             await handle_output(output)
                     # Treat execute func as a normal generator
                     elif inspect.isgeneratorfunction(self.execute):
                         if context:
                             kwargs['context'] = context
-                        blocking_generator = self.execute(inpt, **kwargs)
+                        if self.is_root:
+                            args = []  # don't pass input to root node (no input available)
+                        else:
+                            args = [inpt]
+                        blocking_generator = self.execute(*args, **kwargs)
 
                         def catch_stop_iter(gen):
                             try:

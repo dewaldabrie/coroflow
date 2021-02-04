@@ -1,7 +1,5 @@
 import asyncio
-from unittest import (
-    TestCase,
-)
+from unittest import TestCase
 
 from coroflow import Pipeline, Node, ParallelisationMethod
 
