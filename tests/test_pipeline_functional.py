@@ -8,7 +8,7 @@ def my_sync_task_execute(inpt):
     return inpt
 
 
-async def agen(inpt):
+async def agen():
     for i in range(3):
         await asyncio.sleep(0.0001)
         yield i
@@ -69,7 +69,7 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_task_classes(self):
 
         class GenNode(Node):
-            async def execute(self, inpt):
+            async def execute(self):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
@@ -98,7 +98,7 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_non_async_generator(self):
 
         class SyncGenNode(Node):
-            def execute(self, inpt):
+            def execute(self):
                 for i in range(3):
                     yield i
 
@@ -126,7 +126,7 @@ class TestPipelineChaining(TestCase):
     def test_chaining_with_non_async_function(self):
 
         class GenNode(Node):
-            async def execute(self, inpt):
+            async def execute(self):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i

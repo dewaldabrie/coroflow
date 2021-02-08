@@ -16,7 +16,7 @@ class TestConcurrencyLimits(TestCase):
     def test_async_node_concurrency_limit(self):
 
         class GenNode(Node):
-            async def execute(self, inpt):
+            async def execute(self):
                 for i in range(3):
                     await asyncio.sleep(0.0001)
                     yield i
