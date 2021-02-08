@@ -29,6 +29,7 @@ class Pipeline:
     >>> p = Pipeline()
 
     """
+
     def __init__(self):
         self.nodes = {}
         self.tasks = defaultdict(list)
@@ -147,6 +148,7 @@ class Pipeline:
         :param show_queues: Boolean for whether to show the queues dictionary (for debugging)
         :return: None
         """
+
         async def _run():
             await self.abuild()
             if render:
@@ -208,6 +210,7 @@ class Node(anytree.Node):
     After reading from the input queue it creates a new task to handle the data with the task logic that
     is passed in at construction/class definition.
     """
+
     def __init__(
             self,
             task_id,
@@ -295,7 +298,8 @@ class Node(anytree.Node):
                                 raise ValueError("Unexpected OutputPattern %s." % self.output_pattern)
 
                     # Treat execute func as an async generator
-                    if inspect.isasyncgenfunction(self.execute):
+                    func_type = FuncType.classify(self.execute)
+                    if func_type == FuncType.async_gen:
                         if context:
                             kwargs['context'] = context
                         if self.is_root:
@@ -305,7 +309,7 @@ class Node(anytree.Node):
                         async for output in self.execute(*args, **kwargs):
                             await handle_output(output)
                     # Treat execute func as a normal generator
-                    elif inspect.isgeneratorfunction(self.execute):
+                    elif func_type == FuncType.sync_gen:
                         if context:
                             kwargs['context'] = context
                         if self.is_root:
@@ -320,6 +324,7 @@ class Node(anytree.Node):
                                 return res, False
                             except StopIteration:
                                 return None, True
+
                         if self.parallelisation_method == ParallelisationMethod.event_loop:
                             while True:
                                 output, gen_finished = catch_stop_iter(blocking_generator)
@@ -343,13 +348,13 @@ class Node(anytree.Node):
                                         break
                                     await handle_output(output)
                     # Treat execute func as an async callable
-                    elif inspect.iscoroutinefunction(self.execute):
+                    elif func_type == FuncType.async_method:
                         if context:
                             kwargs['context'] = context
                         output = await self.execute(inpt, **kwargs)
                         await handle_output(output)
                     # Treat execute func as a normal callable
-                    elif inspect.isfunction(self.execute) or inspect.ismethod(self.execute):
+                    elif func_type == FuncType.sync_method:
                         if context:
                             kwargs['context'] = context
                         blocking_function = functools.partial(self.execute, inpt, **kwargs)
@@ -379,7 +384,16 @@ class Node(anytree.Node):
 
             context = {}
             if hasattr(self, 'setup'):
-                context = await self.setup()
+                func_type = FuncType.classify(self.setup)
+                if func_type == FuncType.async_method:
+                    context = await self.setup()
+                elif func_type == FuncType.sync_method:
+                    # Note: this will block the event loop.
+                    context = self.setup()
+                else:
+                    raise ValueError("Unexpected function type for setup function. "
+                                     "Has to be synchronous or async function or class method."
+                                     "No generators allowed.")
 
             try:
                 # First task generates its own data, so we don't need to await the previous stage
@@ -391,9 +405,11 @@ class Node(anytree.Node):
                     while True:
                         inpt = await input_q.get()
                         # limit concurrency if required
-                        if self.max_concurrency and len(list(filter(lambda t: t.done(), self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
+                        if self.max_concurrency and len(list(
+                                filter(lambda t: t.done(), self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
                             while True:
-                                if len(list(filter(lambda t: t.done(), self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
+                                if len(list(filter(lambda t: t.done(),
+                                                   self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
                                     await asyncio.sleep(0.001)
                                 else:
                                     task = asyncio.create_task(outer(target_qs, input_q, inpt, context=context))
@@ -404,7 +420,16 @@ class Node(anytree.Node):
                             self.pipeline.tasks[self.task_id].append(task)
             finally:
                 if hasattr(self, 'teardown'):
-                    await self.teardown(context)
+                    func_type = FuncType.classify(self.setup)
+                    if inspect.iscoroutinefunction(self.teardown):
+                        await self.teardown(context)
+                    elif func_type == FuncType.sync_method:
+                        # Note: this will block the event loop.
+                        self.teardown(context)
+                    else:
+                        raise ValueError("Unexpected function type for teardown function. "
+                                         "Has to be synchronous or async function or class method."
+                                         "No generators allowed.")
 
         return coro_func
 
@@ -415,7 +440,6 @@ class Node(anytree.Node):
             task = asyncio.create_task(self.coro)
             if self.is_root:
                 self.pipeline.root_task = task
-
 
     @property
     def task_id(self):
@@ -462,3 +486,30 @@ class Node(anytree.Node):
                 other.set_downstream(self)
         else:
             others.set_downstream(self)
+
+
+class FuncType:
+    """
+    Use introspeciton to classify which type of function it is.
+    """
+    sync_method = 'Synchronous function or class method'
+    async_method = 'Async function or class method'
+    sync_gen = 'Synchronous generator function or generator class method'
+    async_gen = 'Asynchronous generator function or generator class method'
+
+    @staticmethod
+    def classify(func):
+        # Treat execute func as an async generator
+        if inspect.isasyncgenfunction(func):
+            return FuncType.async_gen
+        # Treat execute func as a normal generator
+        elif inspect.isgeneratorfunction(func):
+            return FuncType.sync_gen
+        # Treat execute func as an async callable
+        elif inspect.iscoroutinefunction(func):
+            return FuncType.async_method
+        # Treat execute func as a normal callable
+        elif inspect.isfunction(func) or inspect.ismethod(func):
+            return FuncType.sync_method
+        else:
+            raise ValueError("Unexpected function type for task.")
