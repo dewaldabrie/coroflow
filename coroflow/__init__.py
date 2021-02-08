@@ -177,6 +177,31 @@ class Pipeline:
         for pre, fill, node in anytree.RenderTree(self.root_node):
             print("%s%s" % (pre, node.name))
 
+    @classmethod
+    def simple_pipe(cls, exec_func_list):
+        """
+        Produce a pipeline with Nodes as simple pipe of nodes with exec funcs as passed.
+        Pipe must be non-fanning.
+        """
+        p = cls()
+        nodes = []
+        for i, f in enumerate(exec_func_list):
+            node_id = 'node-{}'.format(i)
+            if isinstance(f, tuple):
+                assert len(f) == 3, 'Expected (setup, execute, teardown) in tuple.'
+                setup, execute, teardown = f
+                node = Node(node_id, p, setup=setup, teardown=teardown, execute=execute)
+            else:
+                node = Node(node_id, p, execute=f)
+
+            if len(nodes) > 0:
+                nodes[-1].set_downstream(node)
+            nodes.append(node)
+
+        return p
+
+
+
 
 class OutputPattern:
     """
