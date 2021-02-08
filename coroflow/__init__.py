@@ -1,3 +1,11 @@
+"""
+.. module:: coroflow
+   :platform: Unix, Windows
+   :synopsis: Easy pipelines managed by coroutines.
+
+.. moduleauthor:: Dewald Abrie <dewaldabrie@gmail.com>
+"""
+
 import anytree
 import asyncio
 import concurrent.futures
@@ -15,6 +23,11 @@ class Pipeline:
     A class to link tasks together with various patterns like fan-in, fan-out, load balancer, etc.
     Queues are uses to pass data between tasks.
     The pipeline is build by recursively reversing from the leaf nodes of the tree back to the root node.
+
+    Example:
+
+    >>> p = Pipeline()
+
     """
     def __init__(self):
         self.nodes = {}
@@ -28,6 +41,7 @@ class Pipeline:
     def build(self, leaf_nodes=None, stop_before: str = None):
         """
         Connect the tasks in the pipeline.
+
         :param leaf_nodes: Used to recurse this function, nor required from top level call.
         :param stop_before: Used to recurse this function, nor required from top level call.
         :return: None
@@ -128,9 +142,10 @@ class Pipeline:
     def run(self, render=True, show_queues=False):
         """
         Build, then await the initial generator and then join all the input queues.
+
         :param render: Boolean for whether to print and ASCII tree representation of the dag
         :param show_queues: Boolean for whether to show the queues dictionary (for debugging)
-        :return:
+        :return: None
         """
         async def _run():
             await self.abuild()
@@ -164,6 +179,7 @@ class Pipeline:
 class OutputPattern:
     """
     Options for connecting pipeline tasks together:
+
     :param fanout: Pass the output of a task to all nodes connected to it in the DAG.
     :param lb: Pass the output of this task to the node with the shortest input queue of those connected to it.
     """
@@ -172,6 +188,14 @@ class OutputPattern:
 
 
 class ParallelisationMethod:
+    """
+    Options for parralelising tasks in a Node:
+
+    :param 'event-loop': Run the function (async or sync) in the event loop. In case of sync this is not advisable
+                         since it will block the event loop.
+    :param 'threads': Run in a thread pool
+    :param 'processes': Run in a process pool
+    """
     event_loop = 'event-loop'
     thread_pool = 'threads'
     process_pool = 'processes'
@@ -199,6 +223,7 @@ class Node(anytree.Node):
     ):
         """
         Pass in the logic for your task as well as which output pattern to use for data propagation.
+
         :param task_id: Unique name (string) for the task
         :param pipeline: Pipeline object that the task belongs to
         :param coro_func: Custom function to use as an async task builder. Only for advanced users.
