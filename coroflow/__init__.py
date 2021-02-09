@@ -398,7 +398,8 @@ class Node(anytree.Node):
                                 output = await loop.run_in_executor(pool, blocking_function)
                             await handle_output(output)
                     else:
-                        raise ValueError("Unexpected function type for task.")
+                        raise ValueError("Unexpected function type `{0}` for node `{1}`'s execution function.".format(
+                            type(self.execute), self.task_id))
 
                 finally:
                     if input_q is not None:
