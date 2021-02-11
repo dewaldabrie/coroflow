@@ -10,6 +10,7 @@ import anytree
 import asyncio
 import concurrent.futures
 import functools
+import logging
 import inspect
 import random
 from collections import defaultdict
@@ -138,7 +139,7 @@ class Pipeline:
 
                 node = parent
 
-        print("Build complete.")
+        logging.info("Build complete.")
 
     def run(self, render=True, show_queues=False):
         """
@@ -158,15 +159,15 @@ class Pipeline:
             # await initial generator
             await self.root_task
             await asyncio.gather(*[task for sublist in self.tasks.values() for task in sublist])
-            print("Root coro is finished.")
+            logging.info("Root coro is finished.")
             # join all input queues
             for node in anytree.PreOrderIter(self.root_node):
                 task_id = node.task_id
                 input_queue = self.queues[task_id]['input']
                 if input_queue is not None:  # root node has not input queue
-                    pprint(f"Joining queue for {task_id}")
+                    logging.info(f"Joining queue for {task_id}")
                     await input_queue.join()
-                    pprint(f"Done joining queue for {task_id}")
+                    logging.debug(f"Done joining queue for {task_id}")
 
         asyncio.run(_run())
 
@@ -364,6 +365,7 @@ class Node(anytree.Node):
                                 pool_class = concurrent.futures.ThreadPoolExecutor
 
                             with pool_class(max_workers=self.max_concurrency) as pool:
+                                logging.info('Running func {0} with max_concurrency {1}'.format(self.task_id, self.max_concurrency))
                                 loop = asyncio.get_running_loop()
                                 while True:
                                     output, gen_finished = await loop.run_in_executor(
