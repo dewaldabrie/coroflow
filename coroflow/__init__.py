@@ -344,7 +344,7 @@ class Node(anytree.Node):
                             args = [inpt]
                         blocking_generator = self.execute(*args, **kwargs)
 
-                        def catch_stop_iter(gen):
+                        def catch_stop_next(gen):
                             try:
                                 res = next(gen)
                                 return res, False
@@ -353,7 +353,7 @@ class Node(anytree.Node):
 
                         if self.parallelisation_method == ParallelisationMethod.event_loop:
                             while True:
-                                output, gen_finished = catch_stop_iter(blocking_generator)
+                                output, gen_finished = catch_stop_next(blocking_generator)
                                 if gen_finished:
                                     break
                                 await handle_output(output)
@@ -369,7 +369,7 @@ class Node(anytree.Node):
                                 loop = asyncio.get_running_loop()
                                 while True:
                                     output, gen_finished = await loop.run_in_executor(
-                                        pool, catch_stop_iter, blocking_generator
+                                        pool, catch_stop_next, blocking_generator
                                     )
                                     if gen_finished:
                                         break
