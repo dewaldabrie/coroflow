@@ -8,3 +8,8 @@ Useful features include:
 * mix in blocking taks, coroflow will run it in threads
 * has an apache ariflow like api for connecting tasks
 
+# Tests
+
+Run like so:
+
+$ pytest

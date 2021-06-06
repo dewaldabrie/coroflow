@@ -1,4 +1,5 @@
 import asyncio
+import time
 from unittest import TestCase
 
 from coroflow import Pipeline, Node, ParallelisationMethod
@@ -168,3 +169,36 @@ class TestPipelineChaining(TestCase):
         p.run()
 
         self.assertEqual(sorted(outputs), [0, 1, 2])
+
+    def test_io_task_concurrency_time_saving(self):
+        """Test that n tasks in parrallel execute in roughly the same time as 1."""
+        class GenNode(Node):
+            async def execute(self):
+                for i in range(3):
+                    await asyncio.sleep(0.0001)
+                    yield i
+
+        class MyNode(Node):
+            async def execute(self, inpt):
+                await asyncio.sleep(1)
+                return inpt
+
+        outputs = []
+
+        class DataCapture(Node):
+            async def execute(self, inpt):
+                outputs.append(inpt)
+
+        p = Pipeline()
+        t0 = GenNode('gen', p)
+        conc_tasks = [MyNode(f'stage1_t{i}', p) for i in range(10)]
+        t2 = DataCapture('capture', p)
+        for t in conc_tasks:
+            t0.set_downstream(t)
+            t.set_downstream(t2)
+        start = time.time()
+        p.run()
+        duration = time.time() - start
+
+        self.assertLess(duration, 2)
+        self.assertEqual(sorted(outputs), [0] * 10 + [1] * 10 + [2] * 10)
