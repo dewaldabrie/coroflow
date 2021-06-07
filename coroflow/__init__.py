@@ -414,10 +414,10 @@ class Node(anytree.Node):
             if hasattr(self, 'setup'):
                 func_type = FuncType.classify(self.setup)
                 if func_type == FuncType.async_method:
-                    context = await self.setup()
+                    context = await self.setup(**self.kwargs)
                 elif func_type == FuncType.sync_method:
                     # Note: this will block the event loop.
-                    context = self.setup()
+                    context = self.setup(**self.kwargs)
                 else:
                     raise ValueError("Unexpected function type for setup function. "
                                      "Has to be synchronous or async function or class method."
@@ -450,10 +450,10 @@ class Node(anytree.Node):
                 if hasattr(self, 'teardown'):
                     func_type = FuncType.classify(self.setup)
                     if inspect.iscoroutinefunction(self.teardown):
-                        await self.teardown(context)
+                        await self.teardown(context, **self.kwargs)
                     elif func_type == FuncType.sync_method:
                         # Note: this will block the event loop.
-                        self.teardown(context)
+                        self.teardown(context, **self.kwargs)
                     else:
                         raise ValueError("Unexpected function type for teardown function. "
                                          "Has to be synchronous or async function or class method."
