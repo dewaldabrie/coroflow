@@ -33,11 +33,12 @@ class Pipeline:
 
     def __init__(self):
         self.nodes = {}
+        self.workers = defaultdict(list)
         self.tasks = defaultdict(list)
         self.queues = defaultdict(dict)
         self.root_coro = None
         self.root_node = None
-        self.root_task = None
+        self.root_worker = None
         self.proxy_nodes_by_task_id = {}
 
     def build(self, leaf_nodes=None, stop_before: str = None):
@@ -93,14 +94,14 @@ class Pipeline:
             q = asyncio.Queue() if not node.is_root else None
             self.queues[node.task_id]['input'] = q
             self.queues[node.task_id]['targets'] = targets
-            node.prime(self.queues)
+            node.prime(q, targets)
         else:
             # make sure the coro is shared between proxy and original
             if node.task_id not in self.queues:
                 q = asyncio.Queue() if not node.is_root else None
                 self.queues[node.task_id]['input'] = q
                 self.queues[node.task_id]['targets'] = targets
-                node.is_proxy_for_node.prime(self.queues)
+                node.is_proxy_for_node.prime(q, targets)
             node.coro = node.is_proxy_for_node.coro
 
     async def abuild(self, leaf_nodes=None, stop_before: str = None):
@@ -115,7 +116,7 @@ class Pipeline:
             node = leaf
             while True:
                 if node.is_root:
-                    node.prime(self.queues)
+                    node.prime(None, self.queues[node.task_id]['targets'])
                     self.root_coro = node.coro
                     self.root_node = node
                     break
@@ -157,8 +158,10 @@ class Pipeline:
             if show_queues:
                 pprint(self.queues)
             # await initial generator
-            await self.root_task
+            await self.root_worker
+            # wait for all worker's tasks to be finished
             await asyncio.gather(*[task for sublist in self.tasks.values() for task in sublist])
+            # cancel all workers here
             logging.info("Root coro is finished.")
             # join all input queues
             for node in anytree.PreOrderIter(self.root_node):
@@ -285,12 +288,12 @@ class Node(anytree.Node):
     def async_worker_func(self, value):
         self._async_worker_func = value
 
-    async def exec_runner(self, target_qs, input_q, inpt, context=None):
+    async def exec_runner(self, target_qs, input_q, inpt, kwargs, context=None):
         """
         Async function executor that does introspection on the exec func
         to find the approriate way of running it.
         """
-        kwargs = deepcopy(self.kwargs)
+        kwargs = deepcopy(kwargs)
         try:
             async def handle_output(output):
                 if output is not None:
@@ -397,14 +400,11 @@ class Node(anytree.Node):
         if not hasattr(self, 'execute'):
             raise ValueError("Please supply an execute function.")
 
-        async def coro_func(
-                queues,
-                task_id=self.task_id,
+        async def worker_func(
+                input_q,
+                target_qs,
                 **kwargs
         ):
-
-            input_q = queues[task_id].get('input')
-            target_qs = queues[task_id]['targets']
 
             context = {}
             if hasattr(self, 'setup'):
@@ -423,7 +423,7 @@ class Node(anytree.Node):
                 # First task generates its own data, so we don't need to await the previous stage
                 # since there is no previous stage.
                 if self.is_root:
-                    task = asyncio.create_task(self.exec_runner(target_qs, input_q, None, context=context))
+                    task = asyncio.create_task(self.exec_runner(target_qs, input_q, None, kwargs, context=context))
                     self.pipeline.tasks[self.task_id].append(task)
                 else:
                     while True:
@@ -436,11 +436,11 @@ class Node(anytree.Node):
                                                    self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
                                     await asyncio.sleep(0.001)
                                 else:
-                                    task = asyncio.create_task(self.exec_runner(target_qs, input_q, inpt, context=context))
+                                    task = asyncio.create_task(self.exec_runner(target_qs, input_q, inpt, kwargs, context=context))
                                     self.pipeline.tasks[self.task_id].append(task)
                                     break
                         else:
-                            task = asyncio.create_task(self.exec_runner(target_qs, input_q, inpt, context=context))
+                            task = asyncio.create_task(self.exec_runner(target_qs, input_q, inpt, kwargs, context=context,))
                             self.pipeline.tasks[self.task_id].append(task)
             finally:
                 if hasattr(self, 'teardown'):
@@ -455,15 +455,16 @@ class Node(anytree.Node):
                                          "Has to be synchronous or async function or class method."
                                          "No generators allowed.")
 
-        return coro_func
+        return worker_func
 
-    def prime(self, queues):
+    def prime(self, input_q, target_qs):
         """Prime the associated coroutine"""
         if not self.coro:
-            self.coro = self.async_worker_func(queues, task_id=self.task_id, **self.kwargs)
+            self.coro = self.async_worker_func(input_q, target_qs, **self.kwargs)
             task = asyncio.create_task(self.coro)
+            self.pipeline.workers[self.task_id].append(task)
             if self.is_root:
-                self.pipeline.root_task = task
+                self.pipeline.root_worker = task
 
     @property
     def task_id(self):
