@@ -1,3 +1,4 @@
+import os
 import asyncio
 import time
 from unittest import TestCase
@@ -5,7 +6,11 @@ from unittest import TestCase
 from coroflow import Pipeline, Node, ParallelisationMethod
 
 
-def my_sync_task_execute(inpt):
+os.environ['PYTHONASYNCIODEBUG'] = "1"
+os.environ['PYTHONTRACEMALLOC'] = "1"
+
+
+def my_sync_task_execute(inpt, *args, **kwargs):
     return inpt
 
 
@@ -23,7 +28,7 @@ class TestPipelineChaining(TestCase):
         async def generator(input_q, target_qs):
             for url in ['img_url_1', 'img_url_2', 'img_url_3']:
                 for target_q in target_qs:
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.1)
                     await target_q.put(url)
 
         async def func1(input_q, target_qs, param=None):
@@ -34,9 +39,17 @@ class TestPipelineChaining(TestCase):
                 nonlocal input_q
                 input_q.task_done()
 
-            while True:
-                inpt = await input_q.get()
-                asyncio.create_task(execute(target_qs, inpt))
+            waited = 0
+            wait_inc = 0.001
+            wait_limit = 0.11
+            while waited <= wait_limit:
+                try:
+                    inpt = input_q.get_nowait()
+                    waited = 0
+                    asyncio.create_task(execute(target_qs, inpt))
+                except asyncio.queues.QueueEmpty:
+                    await asyncio.sleep(wait_inc)
+                    waited += wait_inc
 
         async def final(input_q, target_qs, param=None):
             async def execute(targets, inpt):
@@ -44,12 +57,20 @@ class TestPipelineChaining(TestCase):
                 nonlocal input_q
                 input_q.task_done()
 
-            while True:
-                inpt = await input_q.get()
-                asyncio.create_task(execute(target_qs, inpt))
+            waited = 0
+            wait_inc = 0.001
+            wait_limit = 0.11
+            while waited <= wait_limit:
+                try:
+                    inpt = input_q.get_nowait()
+                    waited = 0
+                    asyncio.create_task(execute(target_qs, inpt))
+                except asyncio.queues.QueueEmpty:
+                    await asyncio.sleep(wait_inc)
+                    waited += wait_inc
 
         p = Pipeline()
-
+        print("Creating workers...")
         t0 = Node('gen', p, async_worker_func=generator)
         t1 = Node('func1', p, async_worker_func=func1, kwargs={'param': 'param_t1'})
         tf = Node('final', p, async_worker_func=final, kwargs={'param': 'param_t1'})
@@ -78,6 +99,7 @@ class TestPipelineChaining(TestCase):
         class DataCapture(Node):
             async def execute(self, inpt):
                 outputs.append(inpt)
+                await asyncio.sleep(0.0001)
 
         p = Pipeline()
         t0 = GenNode('gen', p)
@@ -174,14 +196,14 @@ class TestPipelineChaining(TestCase):
 
         class MyNode(Node):
             async def execute(self, inpt):
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
                 return inpt
 
-        outputs = []
-
         class DataCapture(Node):
+            outputs = []
+
             async def execute(self, inpt):
-                outputs.append(inpt)
+                self.outputs.append(inpt)
 
         p = Pipeline()
         t0 = GenNode('gen', p)
@@ -194,5 +216,5 @@ class TestPipelineChaining(TestCase):
         p.run()
         duration = time.time() - start
 
-        self.assertLess(duration, 2)
-        self.assertEqual(sorted(outputs), [0] * 10 + [1] * 10 + [2] * 10)
+        self.assertLess(duration, 0.2)
+        self.assertEqual(sorted(t2.outputs), [0] * 10 + [1] * 10 + [2] * 10)
