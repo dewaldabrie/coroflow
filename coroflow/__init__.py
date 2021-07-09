@@ -429,7 +429,6 @@ class Node:
         instance = object.__new__(mixed_cls)
         return instance
 
-
     def __init__(self, task_id, pipeline, async_worker_func=None, setup=None, execute=None, teardown=None,
                  output_pattern=OutputPattern.fanout, parallelisation_method: ParallelisationMethod = None,
                  max_concurrency=None, kwargs=None):
@@ -466,6 +465,7 @@ class Node:
         self.kwargs = kwargs or {}
         self.targets = None
         self.is_proxy_for_node = None
+        self.context = {}
 
     @property
     def async_worker_func(self):
@@ -489,18 +489,20 @@ class Node:
                 **kwargs
         ):
 
-            context = {}
             if hasattr(self, 'setup'):
                 func_type = FuncType.classify(self.setup)
                 if func_type == FuncType.async_method:
                     context = await self.setup(**self.kwargs)
+                    self.context.update(context)
                 elif func_type == FuncType.sync_method:
                     # Note: this will block the event loop.
                     context = self.setup(**self.kwargs)
+                    self.context.update(context)
                 else:
                     raise ValueError("Unexpected function type for setup function. "
                                      "Has to be synchronous or async function or class method."
                                      "No generators allowed.")
+
 
             func_type = FuncType.classify(self.execute)
             with self.pool(func_type) as pool:
@@ -508,7 +510,7 @@ class Node:
                     # First task generates its own data, so we don't need to await the previous stage
                     # since there is no previous stage.
                     if self.is_root:
-                        task = asyncio.create_task(self.run(self.execute, target_qs, input_q, None, kwargs, pool=pool, context=context))
+                        task = asyncio.create_task(self.run(self.execute, target_qs, input_q, None, kwargs, pool=pool, context=self.context))
                         self.pipeline.tasks[self.task_id].append(task)
                     else:
                         # build exec runner based on type of exec func, and output pattern (policy based),
@@ -532,7 +534,7 @@ class Node:
                                     await asyncio.sleep(0.001)
 
                             if inpt is not None:
-                                task = asyncio.create_task(self.run(self.execute, target_qs, input_q, inpt, kwargs, pool=pool, context=context))
+                                task = asyncio.create_task(self.run(self.execute, target_qs, input_q, inpt, kwargs, pool=pool, context=self.context))
                                 self.pipeline.tasks[self.task_id].append(task)
 
                                 # limit concurrency if required
@@ -547,10 +549,10 @@ class Node:
                     if hasattr(self, 'teardown'):
                         func_type = FuncType.classify(self.setup)
                         if inspect.iscoroutinefunction(self.teardown):
-                            await self.teardown(context, **self.kwargs)
+                            await self.teardown(self.context, **self.kwargs)
                         elif func_type == FuncType.sync_method:
                             # Note: this will block the event loop.
-                            self.teardown(context, **self.kwargs)
+                            self.teardown(self.context, **self.kwargs)
                         else:
                             raise ValueError("Unexpected function type for teardown function. "
                                              "Has to be synchronous or async function or class method."
@@ -568,18 +570,25 @@ class Node:
                 self.pipeline.root_worker = task
 
     def set_downstream(self, others):
+        """
+        Other(s) is downstream from self.
+        """
         # Difference between a tree and a dag is that
         # the tree can't join up branches that have diverged
         # like a DAG can.
         # To add this DAG capability, we check if the task is
         # already used somewhere, and if so, we copy it, but
         # make sure it references the same coroutine.
+        # Also ensure that the mutable data structures available
+        # to the setup, exec and teardown functions are shared.
         if isinstance(others, (list, tuple, set)):
             others_copy = []
             for other in others:
-                if other in self.root.descendants:
+                if other in self.root.descendants:  # other is already present in the graph
                     other_proxy = deepcopy(other)
                     other_proxy.async_worker_func = other.async_worker_func
+                    other_proxy.kwargs = other.kwargs
+                    other_proxy.context = other.context
                     other_proxy.is_proxy_for_node = other
                     other = other_proxy
                 others_copy.append(other)
@@ -591,9 +600,11 @@ class Node:
                 self.children = tuple(c for c in others)
         else:
             other = others
-            if other in self.root.descendants:
+            if other in self.root.descendants:  # other is already present in the graph
                 other_proxy = deepcopy(other)
                 other_proxy.async_worker_func = other.async_worker_func
+                other_proxy.kwargs = other.kwargs
+                other_proxy.context = other.context
                 other_proxy.is_proxy_for_node = other
                 other = other_proxy
 
