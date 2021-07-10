@@ -152,7 +152,6 @@ class Pipeline:
         :param show_queues: Boolean for whether to show the queues dictionary (for debugging)
         :return: None
         """
-
         async def _run():
             await self.abuild()
             if render:
@@ -416,20 +415,16 @@ class Node:
                 cls_name += 'SyncMethod'
             else:
                 raise ValueError("Unexpected execution function type %s." % exec_func_type)
-        elif not kwargs.get('async_worker_func'):
-            raise ValueError(f"Node {cls} should have either an execute function or a async_worker_func.")
+        else:
+            raise ValueError(f"Node {cls} should have an execute function.")
 
         bases = mixins + (anytree.NodeMixin, cls)
         attr_dct = {}
-        try:
-            mixed_cls = type(cls_name, bases, attr_dct)
-        except Exception as e:
-            breakpoint()
-            pass
+        mixed_cls = type(cls_name, bases, attr_dct)
         instance = object.__new__(mixed_cls)
         return instance
 
-    def __init__(self, task_id, pipeline, async_worker_func=None, setup=None, execute=None, teardown=None,
+    def __init__(self, task_id, pipeline, setup=None, execute=None, teardown=None,
                  output_pattern=OutputPattern.fanout, parallelisation_method: ParallelisationMethod = None,
                  max_concurrency=None, kwargs=None):
         """
@@ -437,7 +432,6 @@ class Node:
 
         :param task_id: Unique name (string) for the task
         :param pipeline: Pipeline object that the task belongs to
-        :param async_worker_func: Custom function to use as an async task builder. Only for advanced users.
         :param setup: Setup function that passes context to the task logic in execute function
         :param execute: Node logic to handle input and generate output to next stage
         :param teardown: Teardown function to clean up context
@@ -451,7 +445,6 @@ class Node:
             raise ValueError(f'Node task_id must be unique, but `{task_id}` already exists.')
         self.task_id = task_id
         self.pipeline.nodes[task_id] = self
-        self._async_worker_func: Optional[Callable] = async_worker_func
         if setup:
             self.setup = setup
         if execute:
@@ -469,18 +462,10 @@ class Node:
 
     @property
     def async_worker_func(self):
-        if self._async_worker_func:
-            return self._async_worker_func
-        else:
             return self.async_worker_func_builder()
-
-    @async_worker_func.setter
-    def async_worker_func(self, value):
-        self._async_worker_func = value
 
     def async_worker_func_builder(self):
         if not hasattr(self, 'execute'):
-            breakpoint()
             raise ValueError("Please supply an execute function.")
 
         async def worker_func(
@@ -502,7 +487,6 @@ class Node:
                     raise ValueError("Unexpected function type for setup function. "
                                      "Has to be synchronous or async function or class method."
                                      "No generators allowed.")
-
 
             func_type = FuncType.classify(self.execute)
             with self.pool(func_type) as pool:
@@ -586,7 +570,6 @@ class Node:
             for other in others:
                 if other in self.root.descendants:  # other is already present in the graph
                     other_proxy = deepcopy(other)
-                    other_proxy.async_worker_func = other.async_worker_func
                     other_proxy.kwargs = other.kwargs
                     other_proxy.context = other.context
                     other_proxy.is_proxy_for_node = other
@@ -602,7 +585,6 @@ class Node:
             other = others
             if other in self.root.descendants:  # other is already present in the graph
                 other_proxy = deepcopy(other)
-                other_proxy.async_worker_func = other.async_worker_func
                 other_proxy.kwargs = other.kwargs
                 other_proxy.context = other.context
                 other_proxy.is_proxy_for_node = other

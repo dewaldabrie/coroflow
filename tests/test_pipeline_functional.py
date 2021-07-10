@@ -22,66 +22,7 @@ async def agen():
 
 class TestPipelineChaining(TestCase):
 
-    def test_chain_with_custom_coro_funcs(self):
-        output = []
-
-        async def generator(input_q, target_qs):
-            for url in ['img_url_1', 'img_url_2', 'img_url_3']:
-                for target_q in target_qs:
-                    await asyncio.sleep(0.1)
-                    await target_q.put(url)
-
-        async def func1(input_q, target_qs, param=None):
-            async def execute(targets, inpt):
-                outp = inpt
-                for target in targets or []:
-                    await target.put(outp)
-                nonlocal input_q
-                input_q.task_done()
-
-            waited = 0
-            wait_inc = 0.001
-            wait_limit = 0.11
-            while waited <= wait_limit:
-                try:
-                    inpt = input_q.get_nowait()
-                    waited = 0
-                    asyncio.create_task(execute(target_qs, inpt))
-                except asyncio.queues.QueueEmpty:
-                    await asyncio.sleep(wait_inc)
-                    waited += wait_inc
-
-        async def final(input_q, target_qs, param=None):
-            async def execute(targets, inpt):
-                output.append(inpt)
-                nonlocal input_q
-                input_q.task_done()
-
-            waited = 0
-            wait_inc = 0.001
-            wait_limit = 0.11
-            while waited <= wait_limit:
-                try:
-                    inpt = input_q.get_nowait()
-                    waited = 0
-                    asyncio.create_task(execute(target_qs, inpt))
-                except asyncio.queues.QueueEmpty:
-                    await asyncio.sleep(wait_inc)
-                    waited += wait_inc
-
-        p = Pipeline()
-        print("Creating workers...")
-        t0 = Node('gen', p, async_worker_func=generator)
-        t1 = Node('func1', p, async_worker_func=func1, kwargs={'param': 'param_t1'})
-        tf = Node('final', p, async_worker_func=final, kwargs={'param': 'param_t1'})
-        t0.set_downstream(t1)
-        t1.set_downstream(tf)
-
-        p.run()
-
-        self.assertEqual(output, ['img_url_1', 'img_url_2', 'img_url_3'])
-
-    def test_chaining_with_task_classes(self):
+    def test_chaining(self):
 
         class GenNode(Node):
             async def execute(self):
