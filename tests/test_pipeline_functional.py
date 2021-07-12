@@ -1,3 +1,4 @@
+import os
 import asyncio
 import time
 from unittest import TestCase
@@ -5,7 +6,11 @@ from unittest import TestCase
 from coroflow import Pipeline, Node, ParallelisationMethod
 
 
-def my_sync_task_execute(inpt):
+os.environ['PYTHONASYNCIODEBUG'] = "1"
+os.environ['PYTHONTRACEMALLOC'] = "1"
+
+
+def my_sync_task_execute(inpt, *args, **kwargs):
     return inpt
 
 
@@ -17,57 +22,7 @@ async def agen():
 
 class TestPipelineChaining(TestCase):
 
-    def test_chain_with_custom_coro_funcs(self):
-        output = []
-
-        async def generator(queues, task_id=None):
-            target_qs = queues[task_id]['targets']
-            for url in ['img_url_1', 'img_url_2', 'img_url_3']:
-                for target_q in target_qs:
-                    await asyncio.sleep(1)
-                    await target_q.put(url)
-
-        async def func1(queues, param=None, task_id=None):
-            async def execute(targets, inpt):
-                outp = inpt
-                for target in targets or []:
-                    await target.put(outp)
-                nonlocal input_q
-                input_q.task_done()
-
-            input_q = queues[task_id]['input']
-            target_qs = queues[task_id]['targets']
-
-            while True:
-                inpt = await input_q.get()
-                asyncio.create_task(execute(target_qs, inpt))
-
-        async def final(queues, param=None, task_id=None):
-            async def execute(targets, inpt):
-                output.append(inpt)
-                nonlocal input_q
-                input_q.task_done()
-
-            input_q = queues[task_id]['input']
-            target_qs = queues[task_id]['targets']
-
-            while True:
-                inpt = await input_q.get()
-                asyncio.create_task(execute(target_qs, inpt))
-
-        p = Pipeline()
-
-        t0 = Node('gen', p, coro_func=generator)
-        t1 = Node('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
-        tf = Node('final', p, coro_func=final, kwargs={'param': 'param_t1'})
-        t0.set_downstream(t1)
-        t1.set_downstream(tf)
-
-        p.run()
-
-        self.assertEqual(output, ['img_url_1', 'img_url_2', 'img_url_3'])
-
-    def test_chaining_with_task_classes(self):
+    def test_chaining(self):
 
         class GenNode(Node):
             async def execute(self):
@@ -85,6 +40,7 @@ class TestPipelineChaining(TestCase):
         class DataCapture(Node):
             async def execute(self, inpt):
                 outputs.append(inpt)
+                await asyncio.sleep(0.0001)
 
         p = Pipeline()
         t0 = GenNode('gen', p)
@@ -162,7 +118,8 @@ class TestPipelineChaining(TestCase):
 
         p = Pipeline()
         t0 = Node('gen', p, execute=agen)
-        t1 = Node('synchronous_stage1', p, execute=my_sync_task_execute, parallelisation_method=ParallelisationMethod.process_pool, max_concurrency=10)
+        t1 = Node('synchronous_stage1', p, execute=my_sync_task_execute,
+                  parallelisation_method=ParallelisationMethod.process_pool, max_concurrency=10)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)
@@ -180,14 +137,14 @@ class TestPipelineChaining(TestCase):
 
         class MyNode(Node):
             async def execute(self, inpt):
-                await asyncio.sleep(1)
+                await asyncio.sleep(0.1)
                 return inpt
 
-        outputs = []
-
         class DataCapture(Node):
+            outputs = []
+
             async def execute(self, inpt):
-                outputs.append(inpt)
+                self.outputs.append(inpt)
 
         p = Pipeline()
         t0 = GenNode('gen', p)
@@ -200,5 +157,5 @@ class TestPipelineChaining(TestCase):
         p.run()
         duration = time.time() - start
 
-        self.assertLess(duration, 2)
-        self.assertEqual(sorted(outputs), [0] * 10 + [1] * 10 + [2] * 10)
+        self.assertLess(duration, 0.2)
+        self.assertEqual(sorted(t2.outputs), [0] * 10 + [1] * 10 + [2] * 10)
