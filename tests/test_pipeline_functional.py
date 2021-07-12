@@ -57,9 +57,9 @@ class TestPipelineChaining(TestCase):
 
         p = Pipeline()
 
-        t0 = Node('gen', p, coro_func=generator)
-        t1 = Node('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
-        tf = Node('final', p, coro_func=final, kwargs={'param': 'param_t1'})
+        t0 = Node('gen', p, async_worker_func=generator)
+        t1 = Node('func1', p, async_worker_func=func1, kwargs={'param': 'param_t1'})
+        tf = Node('final', p, async_worker_func=final, kwargs={'param': 'param_t1'})
         t0.set_downstream(t1)
         t1.set_downstream(tf)
 
@@ -162,7 +162,8 @@ class TestPipelineChaining(TestCase):
 
         p = Pipeline()
         t0 = Node('gen', p, execute=agen)
-        t1 = Node('synchronous_stage1', p, execute=my_sync_task_execute, parallelisation_method=ParallelisationMethod.process_pool, max_concurrency=10)
+        t1 = Node('synchronous_stage1', p, execute=my_sync_task_execute,
+                  parallelisation_method=ParallelisationMethod.process_pool, max_concurrency=10)
         t2 = DataCapture('capture', p)
         t0.set_downstream(t1)
         t1.set_downstream(t2)

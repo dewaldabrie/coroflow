@@ -51,7 +51,7 @@ class Pipeline:
         if not leaf_nodes:
             leaf_nodes = list(self.nodes.values())[0].root.leaves
         for leaf in leaf_nodes:
-            leaf.coro = leaf.coro_func(None, **leaf.kwargs)
+            leaf.coro = leaf.async_worker_func(None, **leaf.kwargs)
             leaf.coro.send(None)
             node = leaf
             while True:
@@ -66,7 +66,7 @@ class Pipeline:
                 for child in children:
                     if child.coro is None:
                         if child.is_leaf:
-                            child.coro = child.coro_func(None, **child.kwargs)
+                            child.coro = child.async_worker_func(None, **child.kwargs)
                             child.coro.send(None)
                         else:
                             descendant_leaves = [d for d in child.descendants if d.is_leaf]
@@ -77,7 +77,7 @@ class Pipeline:
                 if parent.name == stop_before:
                     return
                 if not parent.coro:
-                    parent.coro = parent.coro_func(parent_targets, **parent.kwargs)
+                    parent.coro = parent.async_worker_func(parent_targets, **parent.kwargs)
                     parent.coro.send(None)
 
                 node = parent
@@ -191,7 +191,7 @@ class Pipeline:
             if isinstance(f, tuple):
                 assert len(f) == 3, 'Expected (setup, execute, teardown) in tuple.'
                 setup, execute, teardown = f
-                node = Node(node_id, p, setup=setup, teardown=teardown, execute=execute)
+                node = Node(node_id, p, setup=setup, execute=execute, teardown=teardown)
             else:
                 node = Node(node_id, p, execute=f)
 
@@ -237,25 +237,15 @@ class Node(anytree.Node):
     is passed in at construction/class definition.
     """
 
-    def __init__(
-            self,
-            task_id,
-            pipeline,
-            coro_func=None,
-            setup=None,
-            execute=None,
-            teardown=None,
-            output_pattern=OutputPattern.fanout,
-            parallelisation_method: ParallelisationMethod = None,
-            max_concurrency=None,
-            kwargs=None
-    ):
+    def __init__(self, task_id, pipeline, async_worker_func=None, setup=None, execute=None, teardown=None,
+                 output_pattern=OutputPattern.fanout, parallelisation_method: ParallelisationMethod = None,
+                 max_concurrency=None, kwargs=None):
         """
         Pass in the logic for your task as well as which output pattern to use for data propagation.
 
         :param task_id: Unique name (string) for the task
         :param pipeline: Pipeline object that the task belongs to
-        :param coro_func: Custom function to use as an async task builder. Only for advanced users.
+        :param async_worker_func: Custom function to use as an async task builder. Only for advanced users.
         :param setup: Setup function that passes context to the task logic in execute function
         :param execute: Node logic to handle input and generate output to next stage
         :param teardown: Teardown function to clean up context
@@ -268,7 +258,7 @@ class Node(anytree.Node):
         if task_id in self.pipeline.nodes:
             raise ValueError(f'Node task_id must be unique, but `{task_id}` already exists.')
         self.pipeline.nodes[task_id] = self
-        self._coro_func: Optional[Callable] = coro_func
+        self._async_worker_func: Optional[Callable] = async_worker_func
         if setup:
             self.setup = setup
         if execute:
@@ -285,15 +275,15 @@ class Node(anytree.Node):
         super().__init__(task_id)
 
     @property
-    def coro_func(self):
-        if self._coro_func:
-            return self._coro_func
+    def async_worker_func(self):
+        if self._async_worker_func:
+            return self._async_worker_func
         else:
-            return self.coro_func_builder()
+            return self.async_worker_func_builder()
 
-    @coro_func.setter
-    def coro_func(self, value):
-        self._coro_func = value
+    @async_worker_func.setter
+    def async_worker_func(self, value):
+        self._async_worker_func = value
 
     async def exec_runner(self, target_qs, input_q, inpt, context=None):
         """
@@ -403,7 +393,7 @@ class Node(anytree.Node):
             if input_q is not None:
                 input_q.task_done()
 
-    def coro_func_builder(self):
+    def async_worker_func_builder(self):
         if not hasattr(self, 'execute'):
             raise ValueError("Please supply an execute function.")
 
@@ -470,7 +460,7 @@ class Node(anytree.Node):
     def prime(self, queues):
         """Prime the associated coroutine"""
         if not self.coro:
-            self.coro = self.coro_func(queues, task_id=self.task_id, **self.kwargs)
+            self.coro = self.async_worker_func(queues, task_id=self.task_id, **self.kwargs)
             task = asyncio.create_task(self.coro)
             if self.is_root:
                 self.pipeline.root_task = task
@@ -491,7 +481,7 @@ class Node(anytree.Node):
             for other in others:
                 if other in self.root.descendants:
                     other_proxy = deepcopy(other)
-                    other_proxy.coro_func = other.coro_func
+                    other_proxy.async_worker_func = other.async_worker_func
                     other_proxy.is_proxy_for_node = other
                     other = other_proxy
                 others_copy.append(other)
@@ -505,7 +495,7 @@ class Node(anytree.Node):
             other = others
             if other in self.root.descendants:
                 other_proxy = deepcopy(other)
-                other_proxy.coro_func = other.coro_func
+                other_proxy.async_worker_func = other.async_worker_func
                 other_proxy.is_proxy_for_node = other
                 other = other_proxy
 

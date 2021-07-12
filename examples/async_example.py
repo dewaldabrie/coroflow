@@ -57,11 +57,11 @@ async def func2(queues, param=None, task_id=None):
 
 p = Pipeline()
 
-t0 = Node('gen', p, coro_func=generator)
-t1 = Node('func1', p, coro_func=func1, kwargs={'param': 'param_t1'})
-t2 = Node('func2', p, coro_func=func2, kwargs={'param': 'param_t2'})
-t3 = Node('func3', p, coro_func=func2, kwargs={'param': 'param_t3'})
-t4 = Node('func4', p, coro_func=func2, kwargs={'param': 'param_t4'})
+t0 = Node('gen', p, async_worker_func=generator)
+t1 = Node('func1', p, async_worker_func=func1, kwargs={'param': 'param_t1'})
+t2 = Node('func2', p, async_worker_func=func2, kwargs={'param': 'param_t2'})
+t3 = Node('func3', p, async_worker_func=func2, kwargs={'param': 'param_t3'})
+t4 = Node('func4', p, async_worker_func=func2, kwargs={'param': 'param_t4'})
 t0.set_downstream(t1)
 t1.set_downstream(t2)
 t1.set_downstream(t3)
