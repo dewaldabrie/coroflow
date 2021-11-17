@@ -531,8 +531,10 @@ class Node:
                                 self.pipeline.tasks[self.task_id].append(task)
 
                                 # limit concurrency if required
+                                def num_running_tasks():
+                                    return len(list(filter(lambda t: not t.done(), self.pipeline.tasks[self.task_id])))
                                 while self.max_concurrency and \
-                                    len(list(filter(lambda t: not t.done(), self.pipeline.tasks[self.task_id]))) >= self.max_concurrency:
+                                    num_running_tasks() >= self.max_concurrency:
                                     await asyncio.sleep(0.001)
 
                 finally:
