@@ -5,7 +5,7 @@ in blocking functions and generators.
 
 Coroflow does a lot of heavy-lifting for you:
 
-* Manage all tasks in the pipelinen concurently in one thread using coroutines
+* Manage all tasks in the pipeline concurently in one thread using coroutines
 * Pass data between tasks with queues
 * Easily specify concurrency limits
 * Connect stages of the pipeline with fan-out/fan-in patterns or load-balancer patterns
@@ -66,7 +66,8 @@ in blocking functions and generators
     p.run()
     print(f"Asynchronous duration: {time.time() - start_time}s.")
 ```
-
+# More examples
+See more examples in my [medium post](https://dewaldabrie.medium.com/python-concurrency-made-easy-with-coroflow-d7e7a4baf356).
 # Tests
 
 Run like so:
